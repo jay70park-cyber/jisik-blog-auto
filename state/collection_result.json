@@ -1,0 +1,33 @@
+{
+  "week_index": 0,
+  "category": "시세_투자분석",
+  "category_display": "시세·투자분석",
+  "period": {
+    "start": "2026-07-07",
+    "end": "2026-08-04"
+  },
+  "rows": [
+    {
+      "keyword": "지식산업센터 투자",
+      "blog": 260821,
+      "cafe": 842941,
+      "trend": 27.77777,
+      "score": 1.0
+    },
+    {
+      "keyword": "지식산업센터 임대수익률",
+      "blog": 48277,
+      "cafe": 300668,
+      "trend": 0.0,
+      "score": 0.127
+    },
+    {
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 11206,
+      "cafe": 211855,
+      "trend": 0.0,
+      "score": 0.063
+    }
+  ],
+  "top_keyword": "지식산업센터 투자"
+}
