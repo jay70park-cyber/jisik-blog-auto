@@ -6,16 +6,37 @@ on:
 jobs:
   test-naver:
     runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
     steps:
       - name: Search Naver Blog for test keyword
         run: |
-          RESULT=$(curl -s -X GET "https://naverapihub.apigw.ntruss.com/search/v1/blog?query=지식산업센터&display=3&format=json" \
+          curl -s -G "https://naverapihub.apigw.ntruss.com/search/v1/blog" \
+            --data-urlencode "query=지식산업센터" \
+            --data-urlencode "display=3" \
+            --data-urlencode "format=json" \
             -H "X-NCP-APIGW-API-KEY-ID: ${{ secrets.NAVER_CLIENT_ID }}" \
-            -H "X-NCP-APIGW-API-KEY: ${{ secrets.NAVER_CLIENT_SECRET }}")
-          echo "$RESULT"
+            -H "X-NCP-APIGW-API-KEY: ${{ secrets.NAVER_CLIENT_SECRET }}" \
+            -o response.json
 
-          FIRST_TITLE=$(echo "$RESULT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['items'][0]['title'] if d.get('items') else ('오류: ' + str(d)))" | sed 's/<[^>]*>//g')
+          echo "----- 원본 응답 -----"
+          cat response.json
 
+          python3 -c "
+import json, re
+with open('response.json', encoding='utf-8') as f:
+    d = json.load(f)
+title = d['items'][0]['title'] if d.get('items') else ('오류: ' + str(d))
+title = re.sub('<[^>]*>', '', title)
+with open('title.txt', 'w', encoding='utf-8') as f:
+    f.write(title)
+"
+          echo "----- 추출된 제목 -----"
+          cat title.txt
+
+          TITLE=$(cat title.txt)
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=네이버 검색 API 테스트: $FIRST_TITLE"
+            --data-urlencode "text=네이버 검색 API 테스트: $TITLE"
