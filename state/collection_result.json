@@ -1,26 +1,26 @@
 {
-  "week_index": 3,
-  "category": "세제_정책",
-  "category_display": "세제·정책",
+  "week_index": 4,
+  "category": "실무체크리스트",
+  "category_display": "실무 체크리스트",
   "period": {
-    "start": "2026-07-07",
-    "end": "2026-08-04"
+    "start": "2026-07-08",
+    "end": "2026-08-05"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 취득세",
-      "blog": 70655,
-      "cafe": 232013,
-      "trend": 100.0,
-      "score": 0.984
+      "keyword": "지식산업센터 계약 주의사항",
+      "blog": 176843,
+      "cafe": 9395,
+      "trend": 0.0,
+      "score": 0.443
     },
     {
-      "keyword": "지식산업센터 임대사업자",
-      "blog": 34238,
-      "cafe": 251843,
+      "keyword": "지식산업센터 분쟁",
+      "blog": 29655,
+      "cafe": 13159,
       "trend": 0.0,
-      "score": 0.345
+      "score": 0.25
     }
   ],
-  "top_keyword": "지식산업센터 취득세"
+  "top_keyword": "지식산업센터 계약 주의사항"
 }
