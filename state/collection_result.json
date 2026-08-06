@@ -1,33 +1,26 @@
 {
-  "week_index": 1,
-  "category": "지역밀착",
-  "category_display": "지역 밀착(2동탄)",
+  "week_index": 2,
+  "category": "입문_기초",
+  "category_display": "입문/기초",
   "period": {
     "start": "2026-07-09",
     "end": "2026-08-06"
   },
   "rows": [
     {
-      "keyword": "동탄 GTX",
-      "blog": 206541,
-      "cafe": 430862,
-      "trend": 41.6279,
+      "keyword": "지식산업센터란",
+      "blog": 796114,
+      "cafe": 1502147,
+      "trend": 68.85245,
       "score": 1.0
     },
     {
-      "keyword": "동탄 지식산업센터",
-      "blog": 70306,
-      "cafe": 384518,
-      "trend": 34.29951,
-      "score": 0.693
-    },
-    {
-      "keyword": "2동탄 지식산업센터",
-      "blog": 55913,
-      "cafe": 363470,
+      "keyword": "지식산업센터 아파트형공장",
+      "blog": 127830,
+      "cafe": 429514,
       "trend": 0.0,
-      "score": 0.25
+      "score": 0.105
     }
   ],
-  "top_keyword": "동탄 GTX"
+  "top_keyword": "지식산업센터란"
 }
