@@ -1,26 +1,33 @@
 {
-  "week_index": 4,
-  "category": "실무체크리스트",
-  "category_display": "실무 체크리스트",
+  "week_index": 5,
+  "category": "전문가코너",
+  "category_display": "전문가 코너",
   "period": {
-    "start": "2026-07-13",
-    "end": "2026-08-10"
+    "start": "2026-07-16",
+    "end": "2026-08-13"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 분쟁",
-      "blog": 71862,
-      "cafe": 13219,
+      "keyword": "지식산업센터 화물엘리베이터",
+      "blog": 36276,
+      "cafe": 9856,
       "trend": 0.0,
-      "score": 0.5
+      "score": 0.494
     },
     {
-      "keyword": "지식산업센터 계약 주의사항",
-      "blog": 31953,
-      "cafe": 9442,
+      "keyword": "지식산업센터 층고 하중",
+      "blog": 17023,
+      "cafe": 10139,
       "trend": 0.0,
-      "score": 0.276
+      "score": 0.341
+    },
+    {
+      "keyword": "지식산업센터 수전용량",
+      "blog": 1229,
+      "cafe": 338,
+      "trend": 0.0,
+      "score": 0.017
     }
   ],
-  "top_keyword": "지식산업센터 분쟁"
+  "top_keyword": "지식산업센터 화물엘리베이터"
 }
