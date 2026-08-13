@@ -1,33 +1,33 @@
 {
-  "week_index": 5,
-  "category": "전문가코너",
-  "category_display": "전문가 코너",
+  "week_index": 0,
+  "category": "시세_투자분석",
+  "category_display": "시세·투자분석",
   "period": {
     "start": "2026-07-16",
     "end": "2026-08-13"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 화물엘리베이터",
-      "blog": 36276,
-      "cafe": 9856,
-      "trend": 0.0,
-      "score": 0.494
+      "keyword": "지식산업센터 투자",
+      "blog": 644038,
+      "cafe": 774387,
+      "trend": 38.88888,
+      "score": 1.0
     },
     {
-      "keyword": "지식산업센터 층고 하중",
-      "blog": 17023,
-      "cafe": 10139,
+      "keyword": "지식산업센터 임대수익률",
+      "blog": 86754,
+      "cafe": 298725,
       "trend": 0.0,
-      "score": 0.341
+      "score": 0.118
     },
     {
-      "keyword": "지식산업센터 수전용량",
-      "blog": 1229,
-      "cafe": 338,
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 16423,
+      "cafe": 211340,
       "trend": 0.0,
-      "score": 0.017
+      "score": 0.062
     }
   ],
-  "top_keyword": "지식산업센터 화물엘리베이터"
+  "top_keyword": "지식산업센터 투자"
 }
