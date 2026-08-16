@@ -7,6 +7,7 @@
 """
 import os
 import json
+import time
 import urllib.request
 import urllib.parse
 import markdown as md_lib
@@ -90,15 +91,28 @@ def write_last_update_id(update_id):
         f.write(str(update_id))
 
 
-def get_telegram_updates(offset, timeout=15):
+def get_telegram_updates(offset, timeout=30, retries=3):
+    """텔레그램 새 메시지를 조회한다.
+    네트워크 문제로 끝내 실패하면 예외를 던지지 않고 빈 목록을 돌려준다.
+    offset을 그대로 두므로, 진짜 메시지가 있었다면 다음 실행에서 다시 잡힌다."""
     url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/getUpdates?" + urllib.parse.urlencode(
         {"offset": offset, "timeout": 0}
     )
-    req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=timeout) as res:
-        data = json.load(res)
-    return data.get("result", [])
-
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                data = json.load(res)
+            if not data.get("ok", False):
+                print("텔레그램 응답 오류: " + str(data.get("description", ""))) 
+                return []
+            return data.get("result", [])
+        except Exception as e:
+            print("텔레그램 조회 실패 (" + str(attempt) + "/" + str(retries) + "): " + str(e))
+            if attempt < retries:
+                time.sleep(attempt * 5)
+    print("텔레그램 조회를 " + str(retries) + "회 모두 실패했습니다. 이번 실행은 '새 메시지 없음'으로 처리합니다.")
+    return []
 
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
 
