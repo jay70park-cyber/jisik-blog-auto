@@ -1,33 +1,33 @@
 {
-  "week_index": 0,
-  "category": "시세_투자분석",
-  "category_display": "시세·투자분석",
+  "week_index": 1,
+  "category": "지역밀착",
+  "category_display": "지역 밀착(2동탄)",
   "period": {
-    "start": "2026-07-16",
-    "end": "2026-08-13"
+    "start": "2026-07-19",
+    "end": "2026-08-16"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 투자",
-      "blog": 644038,
-      "cafe": 774387,
-      "trend": 38.88888,
-      "score": 1.0
+      "keyword": "동탄 GTX",
+      "blog": 211117,
+      "cafe": 450287,
+      "trend": 80.47619,
+      "score": 0.993
     },
     {
-      "keyword": "지식산업센터 임대수익률",
-      "blog": 86754,
-      "cafe": 298725,
-      "trend": 0.0,
-      "score": 0.118
+      "keyword": "동탄 지식산업센터",
+      "blog": 112260,
+      "cafe": 376563,
+      "trend": 81.64251,
+      "score": 0.827
     },
     {
-      "keyword": "동탄 지식산업센터 시세",
-      "blog": 16423,
-      "cafe": 211340,
+      "keyword": "2동탄 지식산업센터",
+      "blog": 88155,
+      "cafe": 356196,
       "trend": 0.0,
-      "score": 0.062
+      "score": 0.283
     }
   ],
-  "top_keyword": "지식산업센터 투자"
+  "top_keyword": "동탄 GTX"
 }
