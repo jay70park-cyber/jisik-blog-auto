@@ -2,7 +2,7 @@ name: Check Telegram Approval
 
 on:
   workflow_dispatch:
-  schedule:
+  # schedule:
     # 평상시 15분 주기는 cron-job.org가 담당한다.
     # 여기 예약은 외부 크론이 멈췄을 때를 대비한 백업(시간당 1회)이다.
     # - cron: '7 * * * *'
