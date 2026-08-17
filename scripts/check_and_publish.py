@@ -91,7 +91,7 @@ def write_last_update_id(update_id):
         f.write(str(update_id))
 
 
-def get_telegram_updates(offset, timeout=30, retries=3):
+def get_telegram_updates(offset, timeout=20, retries=2):
     """텔레그램 새 메시지를 조회한다.
     네트워크 문제로 끝내 실패하면 예외를 던지지 않고 빈 목록을 돌려준다.
     offset을 그대로 두므로, 진짜 메시지가 있었다면 다음 실행에서 다시 잡힌다."""
