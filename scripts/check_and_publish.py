@@ -501,6 +501,13 @@ def main():
     text = latest["message"]["text"].strip()
     max_update_id = max(u["update_id"] for u in updates)
 
+    latest = relevant[-1]
+    text = latest["message"]["text"].strip()
+    max_update_id = max(u["update_id"] for u in updates)
+
+    # 처리 도중 실패해도 같은 메시지를 무한 재처리하지 않도록 진도를 먼저 기록한다.
+    write_last_update_id(max_update_id)
+    
     if is_approval(text):
         print("승인 메시지 감지: " + text)
         status = {"state": "approved", "message": text}
@@ -542,7 +549,6 @@ def main():
             revised = call_claude_revise(previous_draft, text)
             if not revised or not revised.strip():
                 send_telegram_message("수정본 생성에 실패했습니다(빈 응답). 다시 한 번 요청해주세요.")
-                write_last_update_id(max_update_id)
                 return
             with open(DRAFT_FILE, "w", encoding="utf-8") as f:
                 f.write(revised)
@@ -558,8 +564,5 @@ def main():
                 "승인하시려면 '승인'이라고 답장해주세요.",
             )
 
-    write_last_update_id(max_update_id)
-
-
-if __name__ == "__main__":
+    if __name__ == "__main__":
     main()
