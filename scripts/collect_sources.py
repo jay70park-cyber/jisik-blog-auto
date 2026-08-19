@@ -129,7 +129,7 @@ def next_rotation_index():
     os.makedirs("state", exist_ok=True)
     with open(ROTATION_STATE_FILE, "w", encoding="utf-8") as f:
         f.write(str((idx + 1) % len(ROTATION)))
-return idx
+    return idx
     
 def pick_track(today=None):
     """오늘 날짜로 (트랙, 카테고리키, 표시명, 키워드목록, 인덱스)을 결정한다.
