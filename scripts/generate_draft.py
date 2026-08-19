@@ -18,6 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import make_thumbnail as thumb
+from content_rules import build_rules
 
 NAVER_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
@@ -87,8 +88,9 @@ def call_claude_with_search(prompt, timeout=280):
     return text
 
 
-def build_prompt(result, refs, today, plan=None):
+def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
+    rules = build_rules(category)
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
     kw = result["top_keyword"]
 
@@ -186,7 +188,15 @@ def build_prompt(result, refs, today, plan=None):
 
 **포지셔닝**: 글쓴이는 향후 이 분야 중개사로 개업할 예정입니다. 현장 감각이 묻어나는 서술을 한두 군데 자연스럽게 넣되, "문의 주세요", "상담 환영", 특정 매물 추천, 글 말미 상담 유도 같은 노골적 영업 표현은 절대 쓰지 마세요. 마무리는 정보 요약으로 끝내세요.
 
-전체 분량 1800~2400자, 전문성 있으면서 친근한 톤.
+**SEO 메인 키워드는 "{kw}" 입니다.** 아래 SEO 규칙의 "메인 키워드"는 모두 이것을 가리킵니다.
+
+{rules}
+
+**금지 표현**: "~할 수 있습니다", "~에 영향을 줍니다", "~가 중요합니다" 같은 조건부·당위 서술로 문단을 끝내지 마세요. 반드시 구체적 숫자나 확인 방법으로 끝내세요. 근거 없는 별점(★)이나 추천도 표도 쓰지 마세요.
+
+**시세 수치**: 웹 검색으로 확인되지 않은 시세는 임의로 지어내지 말고 <mark>[평당 분양가 확인 필요]</mark> 형태의 자리표시자로 남기세요.
+
+전체 분량 2000~3000자, 전문성 있으면서 친근한 톤.
 마크다운 텍스트만 출력하고 다른 설명은 붙이지 마세요."""
     return prompt
 
