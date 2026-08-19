@@ -35,9 +35,30 @@ CATEGORY_NAMES = {
 }
 ROTATION = ["시세_투자분석", "지역밀착", "입문_기초", "세제_정책", "실무체크리스트", "전문가코너"]
 
+# ── 목요일 홀수주: 상가·공장 (지산 생태계) ──
+SANGGA_CATEGORIES = {
+    "단지내상가": ["지식산업센터 상가", "동탄 상가 분양", "지산 상가 임대"],
+    "배후상권": ["동탄 상가 임대", "동탄 상권 분석", "동탄 상가 월세"],
+    "소형공장": ["동탄 공장 매매", "동탄 창고 임대", "동탄 소형공장"],
+    "공장임대차": ["공장 임대차 계약", "동탄 공장 임대", "공장 부동산"],
+    "업종별입지": ["제조업 입지 조건", "지식산업센터 입주 업종", "동탄 공장 입지"],
+    "상품비교": ["지식산업센터 상가 비교", "공장 vs 지식산업센터", "동탄 수익형 부동산"],
+}
+SANGGA_NAMES = {
+    "단지내상가": "지산 단지 내 상가",
+    "배후상권": "지산 배후 상권",
+    "소형공장": "소형 공장·창고",
+    "공장임대차": "공장 임대차 실무",
+    "업종별입지": "업종별 입지 조건",
+    "상품비교": "지산·공장·상가 비교",
+}
+SANGGA_ROTATION = ["단지내상가", "배후상권", "소형공장", "공장임대차", "업종별입지", "상품비교"]
+
+# ── 목요일 짝수주: 지역 개발 이슈 ──
+LOCAL_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
+
 # 순환의 기준 시작일 (이 주가 1번째 카테고리)
 BASE_DATE = datetime.date(2026, 8, 4)
-
 
 def naver_search_total(endpoint, query, timeout=15):
     """네이버 검색 API(블로그/카페 등)에서 검색결과 총 건수(total)를 가져온다."""
@@ -109,12 +130,28 @@ def next_rotation_index():
     with open(ROTATION_STATE_FILE, "w", encoding="utf-8") as f:
         f.write(str((idx + 1) % len(ROTATION)))
     return idx
+    
+def pick_track(today=None):
+    """오늘 날짜로 (트랙, 카테고리키, 표시명, 키워드목록, 인덱스)을 결정한다.
+    월요일 -> 지산 / 목요일 홀수주 -> 상가·공장 / 목요일 짝수주 -> 지역 이슈"""
+    if today is None:
+        today = datetime.date.today()
 
+    if today.weekday() == 0:          # 월요일
+        idx = next_rotation_index()
+        key = ROTATION[idx]
+        return "jisik", key, CATEGORY_NAMES[key], CATEGORIES[key], idx
+
+    week = today.isocalendar()[1]
+    if week % 2 == 1:                 # 목요일 홀수주
+        idx = (week // 2) % len(SANGGA_ROTATION)
+        key = SANGGA_ROTATION[idx]
+        return "sangga", key, SANGGA_NAMES[key], SANGGA_CATEGORIES[key], idx
+
+    return "local", "지역이슈", "동탄 지역 개발 이슈", LOCAL_KEYWORDS, 0
 
 def main():
-    idx = next_rotation_index()
-    category = ROTATION[idx]
-    keywords = CATEGORIES[category]
+    track, category, category_display, keywords, idx = pick_track()
 
     end = datetime.date.today()
     start = end - datetime.timedelta(days=28)
@@ -143,8 +180,9 @@ def main():
 
     result = {
         "week_index": idx,
+        "track": track,
         "category": category,
-        "category_display": CATEGORY_NAMES[category],
+        "category_display": category_display,
         "period": {"start": start.isoformat(), "end": end.isoformat()},
         "rows": rows,
         "top_keyword": top["keyword"],
