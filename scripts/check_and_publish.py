@@ -18,6 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+from content_rules import build_rules
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -431,7 +432,8 @@ def send_telegram_document(filepath, caption, timeout=30):
         raise
 
 
-def call_claude_revise(previous_draft, instruction, timeout=280):
+def call_claude_revise(previous_draft, instruction, timeout=280, category="jisik"):
+    rules = build_rules(category)
     prompt = f"""아래는 네이버 블로그용으로 작성 중인 마크다운 초안입니다.
 
 [기존 초안]
@@ -439,6 +441,8 @@ def call_claude_revise(previous_draft, instruction, timeout=280):
 
 [수정 지시사항]
 {instruction}
+
+{rules}
 
 위 지시사항을 반영해서 초안 전체를 다시 작성해주세요. 다음 규칙은 계속 지켜주세요:
 - 이 글은 정보 나열이 아니라, 서두에 명확한 핵심 인사이트(이 글의 결론)를 1~2문장으로 먼저 제시하고, 본문은 "왜 지금인가 → 무엇이 근거인가 → 그래서 어떤 의미인가 → 어떻게 대응할 것인가" 순서로 단계별로 전개할 것. 각 섹션은 앞 섹션의 결론을 이어받아 다음 섹션으로 자연스럽게 연결될 것
@@ -497,10 +501,6 @@ def main():
         return
 
     # 가장 최근 메시지 하나만 처리 (여러 개 밀려있어도 최신 지시를 기준으로 처리)
-    latest = relevant[-1]
-    text = latest["message"]["text"].strip()
-    max_update_id = max(u["update_id"] for u in updates)
-
     latest = relevant[-1]
     text = latest["message"]["text"].strip()
     max_update_id = max(u["update_id"] for u in updates)
@@ -564,5 +564,5 @@ def main():
                 "승인하시려면 '승인'이라고 답장해주세요.",
             )
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
