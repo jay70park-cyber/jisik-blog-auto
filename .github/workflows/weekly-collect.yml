@@ -46,6 +46,13 @@ jobs:
             echo "should_run=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Cache pip
+        if: steps.guard.outputs.should_run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-markdown-matplotlib-pillow
+          
       - name: Install Python dependencies
         if: steps.guard.outputs.should_run == 'true'
         run: |
