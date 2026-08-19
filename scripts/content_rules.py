@@ -73,10 +73,10 @@ def build_rules(category="jisik"):
 # ─────────────────────────────────────────────
 #
 #   월요일        -> 지식산업센터 (기존 6개 분류 순환)
-#   목요일 홀수주  -> 상가·상가주택
+#   목요일 홀수주  -> 상가·공장
 #   목요일 짝수주  -> 동탄 지역 개발 이슈
 #
-# 지산 50% / 상가 25% / 지역 25% 비중이 된다.
+# 지산 50% / 상가·공장 25% / 지역 25% 비중이 된다.
 
 SANGGA_CATEGORIES = [
     "지산 단지 내 상가",
@@ -106,7 +106,7 @@ def pick_theme(today=None):
     week = today.isocalendar()[1]
     if week % 2 == 1:
         idx = (week // 2) % len(SANGGA_CATEGORIES)
-        return "sangga", "상가·상가주택", SANGGA_CATEGORIES[idx]
+        return "sangga", "상가·공장", SANGGA_CATEGORIES[idx]
 
     return "local", "동탄 지역 개발 이슈", None
 
