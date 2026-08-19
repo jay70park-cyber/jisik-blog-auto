@@ -62,7 +62,7 @@ def call_claude_with_search(prompt, timeout=280):
     body = json.dumps(
         {
             "model": MODEL,
-            "max_tokens": 8000,
+            "max_tokens": 16000,
             "tools": [{"type": "web_search_20250305", "name": "web_search"}],
             "messages": [{"role": "user", "content": prompt}],
         },
