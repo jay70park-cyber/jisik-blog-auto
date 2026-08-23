@@ -4,28 +4,28 @@
   "category": "지역이슈",
   "category_display": "동탄 지역 개발 이슈",
   "period": {
-    "start": "2026-07-22",
-    "end": "2026-08-19"
+    "start": "2026-07-26",
+    "end": "2026-08-23"
   },
   "rows": [
     {
       "keyword": "동탄 반도체",
-      "blog": 121996,
-      "cafe": 236297,
-      "trend": 28.33333,
+      "blog": 121813,
+      "cafe": 236132,
+      "trend": 86.66666,
       "score": 0.825
     },
     {
       "keyword": "동탄 교통 개발",
-      "blog": 184660,
-      "cafe": 372182,
+      "blog": 184064,
+      "cafe": 372058,
       "trend": 0.0,
       "score": 0.5
     },
     {
       "keyword": "동탄 개발 호재",
-      "blog": 101702,
-      "cafe": 250794,
+      "blog": 101530,
+      "cafe": 250706,
       "trend": 0.0,
       "score": 0.3
     }
