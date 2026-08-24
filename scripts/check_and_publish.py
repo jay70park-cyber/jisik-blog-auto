@@ -432,7 +432,7 @@ def send_telegram_document(filepath, caption, timeout=30):
         raise
 
 
-def call_claude_revise(previous_draft, instruction, timeout=280, category="jisik"):
+def call_claude_revise(previous_draft, instruction, timeout=400, category="jisik"):
     rules = build_rules(category)
     prompt = f"""아래는 네이버 블로그용으로 작성 중인 마크다운 초안입니다.
 
@@ -463,7 +463,7 @@ def call_claude_revise(previous_draft, instruction, timeout=280, category="jisik
     body = json.dumps(
         {
             "model": MODEL,
-            "max_tokens": 8000,
+            "max_tokens": 16000,
             "tools": [{"type": "web_search_20250305", "name": "web_search"}],
             "messages": [{"role": "user", "content": prompt}],
         },
