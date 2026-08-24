@@ -10,8 +10,8 @@ on:
 # 두 트리거가 겹쳐 같은 답장을 두 번 처리하거나 state/ 커밋이 충돌하지 않도록
 # 한 번에 하나만 실행되게 하고, 뒤에 온 실행은 취소하지 않고 대기시킨다.
 concurrency:
-  group: check-approval
-  cancel-in-progress: true
+  group: jisik-blog-pipeline
+  cancel-in-progress: false
 
 jobs:
   check:
