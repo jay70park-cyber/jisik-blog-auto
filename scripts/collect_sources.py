@@ -133,9 +133,10 @@ def next_rotation_index():
     
 def pick_track(today=None):
     """오늘 날짜로 (트랙, 카테고리키, 표시명, 키워드목록, 인덱스)을 결정한다.
-    월요일 -> 지산 / 목요일 홀수주 -> 상가·공장 / 목요일 짝수주 -> 지역 이슈"""
+    GitHub 러너는 UTC로 돌므로 반드시 KST로 변환해서 요일을 판단한다."""
     if today is None:
-        today = datetime.date.today()
+        kst = datetime.timezone(datetime.timedelta(hours=9))
+        today = datetime.datetime.now(kst).date()
 
     if today.weekday() == 0:          # 월요일
         idx = next_rotation_index()
@@ -148,7 +149,8 @@ def pick_track(today=None):
         key = SANGGA_ROTATION[idx]
         return "sangga", key, SANGGA_NAMES[key], SANGGA_CATEGORIES[key], idx
 
-    return "local", "지역이슈", "동탄 지역 개발 이슈", LOCAL_KEYWORDS, 0
+    idx = (week // 2) % len(LOCAL_KEYWORDS)
+    return "local", "지역이슈", "동탄 지역 개발 이슈", [LOCAL_KEYWORDS[idx]], idx
 
 def main():
     track, category, category_display, keywords, idx = pick_track()
