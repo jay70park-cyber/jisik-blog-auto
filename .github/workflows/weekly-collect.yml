@@ -11,7 +11,7 @@ on:
 
 # cron-job.org 트리거와 GitHub 예약이 겹쳐도 동시에 돌지 않도록 직렬화한다.
 concurrency:
-  group: weekly-collect
+  group: jisik-blog-pipeline
   cancel-in-progress: false
 
 jobs:
