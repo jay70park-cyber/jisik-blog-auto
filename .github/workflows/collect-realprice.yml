@@ -42,7 +42,7 @@ jobs:
         run: |
           python3 scripts/collect_realprice.py
           
-       - name: Run analysis script
+      - name: Run analysis script
         run: |
           python3 scripts/analyze_realprice.py
 
