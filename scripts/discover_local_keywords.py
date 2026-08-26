@@ -20,7 +20,6 @@ import time
 import datetime
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
 
 NAVER_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
@@ -30,13 +29,17 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 DATA_DIR = "data"
 KEYWORD_FILE = os.path.join(DATA_DIR, "local_keywords.json")
 
-# 뉴스를 긁어올 씨앗 질의. 동탄 지역 개발 전반을 훑는다.
+# 뉴스를 긁어올 씨앗 질의.
+# "동탄 개발" 처럼 넓게 잡으면 지역 생활·연예 기사가 대량으로 딸려온다.
+# 산업·부동산 문맥을 질의 자체에 박아 넣어야 쓸 만한 후보가 나온다.
 SEED_QUERIES = [
-    "동탄 개발",
-    "동탄 신도시",
-    "화성 동탄",
-    "동탄 반도체",
-    "동탄 교통",
+    "동탄 지식산업센터",
+    "동탄 산업단지",
+    "동탄 반도체 클러스터",
+    "화성 동탄 개발계획",
+    "동탄 교통망 착공",
+    "동탄 상업용지",
+    "동탄 부동산 시장",
 ]
 
 NEWS_PER_QUERY = 100        # 질의당 기사 수 (최대 100)
@@ -46,13 +49,34 @@ TREND_CHECK_LIMIT = 20      # 트렌드 조회는 API 부담이 있어 상위 N�
 RETIRE_DAYS = 60            # 며칠 안 보이면 은퇴시킬 것인가
 MAX_KEYWORDS = 12           # 목록 최대 크기
 
+# 부동산·산업 문맥 판별어.
+# 제목에 이 중 하나라도 없는 기사는 통째로 버린다.
+# 워터파크 개장, 연예인 집들이, 봉사활동 기사가 걸러지는 지점이다.
+CONTEXT_WORDS = {
+    "분양", "매매", "임대", "임차", "전세", "월세", "매물",
+    "지식산업센터", "지산", "산업단지", "산단", "공장", "창고",
+    "상가", "오피스", "빌딩", "사옥", "연구소",
+    "부동산", "시세", "집값", "청약", "입주", "준공", "착공", "허가",
+    "개발", "투자", "분양가", "낙찰", "경매", "재건축", "재개발",
+    "클러스터", "반도체", "노선", "역세권", "교통망", "철도", "도로",
+    "용지", "택지", "지구단위", "인허가", "공급",
+}
+
 # 뉴스 제목에 흔하지만 소재가 될 수 없는 말들
 STOPWORDS = {
+    # 일반
     "동탄", "화성", "화성시", "경기", "경기도", "기자", "뉴스", "속보", "단독",
     "오늘", "내일", "올해", "작년", "내년", "이번", "지난", "최근", "현재",
-    "관련", "대한", "위해", "통해", "따라", "대해", "가운데", "밝혔다", "전했다",
-    "포토", "영상", "사진", "종합", "주요", "전체", "우리", "그것", "이것",
-    "시장", "시민", "주민", "지역", "일대", "현장", "관계자", "코스피", "코스닥",
+    "관련", "대한", "위해", "위한", "통해", "따라", "대해", "가운데",
+    "밝혔다", "전했다", "고민", "우리", "그것", "이것", "모두", "함께",
+    "포토", "영상", "사진", "종합", "주요", "전체", "공개", "발표",
+    "시장", "시민", "주민", "지역", "일대", "현장", "관계자",
+    "코스피", "코스닥", "특례시", "서울", "수도권",
+    # 생활·연예 기사에서 딸려오는 말
+    "홈즈", "이현이", "남편", "아내", "부부", "출연", "방송", "예능",
+    "패밀리풀", "물놀이", "행사", "개최", "축제", "공연", "체험", "나들이",
+    "사회공헌", "봉사", "기부", "삼성맨", "이사", "맛집", "카페",
+    "교통약자", "어린이", "학생", "학부모", "병원", "진료",
 }
 
 
@@ -64,46 +88,23 @@ def strip_tags(s):
         s = s.replace(a, b)
     return s.strip()
 
-def fetch_news(query, display=100, timeout=20):
-    """구글 뉴스 RSS에서 기사 목록을 가져온다.
 
-    네이버 뉴스 API는 별도 신청 대상이라 401이 떠서 이쪽을 쓴다.
-    인증이 없고 최신순으로 오며, 제목과 발행일만 있으면 충분하다.
-    반환 형식은 네이버 API와 맞춰 title/link/pubDate 키를 쓴다.
-    """
-    url = "https://news.google.com/rss/search?" + urllib.parse.urlencode({
-        "q": query,
-        "hl": "ko",
-        "gl": "KR",
-        "ceid": "KR:ko",
-    })
+def fetch_news(query, display=100, timeout=20):
+    """네이버 뉴스 검색. 최신순으로 가져온다."""
+    url = "https://naverapihub.apigw.ntruss.com/search/v1/news?" + urllib.parse.urlencode(
+        {"query": query, "display": display, "sort": "date"}
+    )
     req = urllib.request.Request(url, headers={
-        # User-Agent가 없으면 구글이 거부하는 경우가 있다
-        "User-Agent": "Mozilla/5.0 (compatible; jisik-blog-auto/1.0)",
+        "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
+        "X-NCP-APIGW-API-KEY": NAVER_SECRET,
     })
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
-            xml_text = res.read().decode("utf-8", errors="replace")
+            return json.load(res).get("items", [])
     except Exception as e:
         print("뉴스 검색 오류(" + query + "): " + str(e))
         return []
 
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError as e:
-        print("RSS 파싱 오류(" + query + "): " + str(e))
-        return []
-
-    items = []
-    for it in root.iter("item"):
-        items.append({
-            "title": (it.findtext("title") or "").strip(),
-            "link": (it.findtext("link") or "").strip(),
-            "pubDate": (it.findtext("pubDate") or "").strip(),
-        })
-        if len(items) >= display:
-            break
-    return items
 
 def parse_pubdate(s):
     """'Mon, 25 Aug 2026 09:00:00 +0900' 형식을 date로."""
@@ -194,6 +195,7 @@ def main():
     # ── 1. 뉴스 수집 ──────────────────────────
     titles = []
     seen_links = set()
+    skipped = 0
     for q in SEED_QUERIES:
         items = fetch_news(q, NEWS_PER_QUERY)
         for it in items:
@@ -204,10 +206,17 @@ def main():
             pub = parse_pubdate(it.get("pubDate", ""))
             if pub and pub < cutoff:
                 continue
-            titles.append(strip_tags(it.get("title", "")))
+            title = strip_tags(it.get("title", ""))
+            # 부동산·산업 문맥이 없는 기사는 버린다.
+            # 이 한 줄이 워터파크·연예 기사를 통째로 걸러낸다.
+            if not any(w in title for w in CONTEXT_WORDS):
+                skipped += 1
+                continue
+            titles.append(title)
         time.sleep(0.3)
 
-    print("최근 {}일 기사 {}건 수집".format(RECENT_DAYS, len(titles)))
+    print("최근 {}일 기사 {}건 채택 (문맥 불일치 {}건 제외)".format(
+        RECENT_DAYS, len(titles), skipped))
     if not titles:
         print("기사를 못 가져왔습니다. 기존 목록을 유지합니다.")
         return
