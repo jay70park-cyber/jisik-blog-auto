@@ -247,22 +247,46 @@ def wait_for_reply(seconds=APPROVE_WAIT):
         print("대기 중... 남은 시간 {}초".format(int(deadline - time.time())))
     return None
 
-def apply_commands(text, items):
-    """'+1 +3 -5' 형식의 답장으로 사용 여부를 바꾼다.
+def apply_commands(text, items, today):
+    """답장으로 목록을 조정한다.
 
-    +번호 : 사용 목록에 넣는다 (pinned=True)
-    -번호 : 사용 목록에서 뺀다 (pinned=False)
+    -번호      : 해당 키워드를 사용 목록에서 뺀다
+    +키워드    : 새 키워드를 직접 추가한다 (예: +동탄 트램)
+    한 줄에 여러 개를 섞어 써도 된다.
     """
     changed = []
-    for m in re.finditer(r"([+-])\s*(\d+)", text):
-        sign, num = m.group(1), int(m.group(2))
-        if not (1 <= num <= len(items)):
-            continue
-        item = items[num - 1]
-        item["pinned"] = (sign == "+")
-        changed.append("{} {}".format(sign, item["keyword"]))
-    return changed
 
+    # 먼저 빼기 처리 (번호는 원래 목록 기준이라 삭제 전에 처리해야 한다)
+    for m in re.finditer(r"-\s*(\d+)", text):
+        num = int(m.group(1))
+        if 1 <= num <= len(items):
+            items[num - 1]["pinned"] = False
+            changed.append("뺌: " + items[num - 1]["keyword"])
+
+    # 그다음 직접 추가. +뒤에 숫자가 아닌 글자가 오면 키워드로 본다.
+    for m in re.finditer(r"\+\s*([가-힣A-Za-z][가-힣A-Za-z0-9 ]{1,20})", text):
+        kw = m.group(1).strip()
+        if not kw:
+            continue
+        if any(i["keyword"] == kw for i in items):
+            # 이미 있으면 다시 켜준다
+            for i in items:
+                if i["keyword"] == kw:
+                    i["pinned"] = True
+                    changed.append("다시 사용: " + kw)
+            continue
+        items.append({
+            "keyword": kw,
+            "first_seen": today.isoformat(),
+            "last_seen": today.isoformat(),
+            "news_count": 0,
+            "trend": 0.0,
+            "pinned": True,
+            "manual": True,      # 직접 넣은 것은 은퇴 대상에서 제외
+        })
+        changed.append("추가: " + kw)
+
+    return changed
 def main():
     today = datetime.date.today()
     cutoff = today - datetime.timedelta(days=RECENT_DAYS)
@@ -341,7 +365,7 @@ def main():
             "last_seen": today.isoformat(),
             "news_count": v["news_count"],
             "trend": v["trend"],
-            "pinned": prev.get("pinned", False),
+            "pinned": prev.get("pinned", True),
         }
 
     # 이번에 안 잡힌 기존 키워드 처리
@@ -356,7 +380,7 @@ def main():
             last_date = today
         age = (today - last_date).days
 
-        if prev.get("pinned"):
+        if prev.get("pinned") or prev.get("manual"):
             merged[k] = prev          # 직접 지정한 것은 유지
         elif age <= RETIRE_DAYS:
             merged[k] = prev          # 아직 유예 기간
@@ -384,12 +408,12 @@ def main():
     if retired:
         lines.append("")
         lines.append("은퇴: " + ", ".join(retired))
-    lines += [
+        lines += [
         "",
         "─────────────",
-        "쓸 것은 +번호, 뺄 것은 -번호로 답장해주세요.",
-        "예) +2 +5 -11",
-        "({}분 안에 무응답이면 현재 상태로 확정)".format(APPROVE_WAIT // 60),
+        "뺄 것은 -번호로 답장해주세요. 예) -1 -4 -11",
+        "직접 추가하려면 +키워드. 예) +동탄 트램",
+        "({}분 안에 무응답이면 전부 사용합니다)".format(APPROVE_WAIT // 60),
     ]
     text = "\n".join(lines)
     print(text)
@@ -397,7 +421,7 @@ def main():
 
     reply = wait_for_reply()
     if reply:
-        changed = apply_commands(reply, items)
+        changed = apply_commands(reply, items, today)
         if changed:
             print("변경: " + ", ".join(changed))
             send_telegram("반영했습니다.\n" + "\n".join(changed))
