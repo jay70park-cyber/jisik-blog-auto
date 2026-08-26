@@ -11,11 +11,27 @@
       "pinned": false
     },
     {
+      "keyword": "동탄 어반원",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 3,
+      "trend": 74.07407,
+      "pinned": false
+    },
+    {
       "keyword": "동탄 서울",
       "first_seen": "2026-08-26",
       "last_seen": "2026-08-26",
       "news_count": 6,
       "trend": 60.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 부동산",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 2,
+      "trend": 36.85897,
       "pinned": false
     },
     {
