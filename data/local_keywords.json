@@ -1,0 +1,78 @@
+{
+  "updated": "2026-08-26",
+  "source": "네이버 뉴스 최근 21일 + 검색어 트렌드 검증",
+  "keywords": [
+    {
+      "keyword": "동탄 임장",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 6,
+      "trend": 100.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 서울",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 6,
+      "trend": 60.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 집값",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 10,
+      "trend": 28.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 이사",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 8,
+      "trend": 25.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 신도시",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 7,
+      "trend": 24.14486,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 반도체",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 12,
+      "trend": 23.33333,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 패밀리풀",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 8,
+      "trend": 6.15696,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 행사",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 11,
+      "trend": 3.96825,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 물놀이",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 7,
+      "trend": 3.14685,
+      "pinned": false
+    }
+  ]
+}
