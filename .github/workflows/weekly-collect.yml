@@ -2,6 +2,11 @@ name: Weekly Source Collection
 
 on:
   workflow_dispatch:
+    inputs:
+      auction:
+        description: '경매 글로 진행 (4주차 목요일만 적용)'
+        required: false
+        default: '0'
   schedule:
     # 정각은 전 세계 작업이 몰려 지연/스킵되므로 분을 어긋나게 잡는다.
     # 1차: 월·목 08:17 KST = UTC 23:17 (일·수)
@@ -29,6 +34,7 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
       CALC_URL: https://jay70park-cyber.github.io/jisik-calc/
+      AUCTION_READY: ${{ github.event.inputs.auction || '0' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
