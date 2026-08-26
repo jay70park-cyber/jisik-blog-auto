@@ -49,6 +49,8 @@ MIN_NEWS_COUNT = 2          # 뉴스에 최소 몇 번 나와야 후보로 볼 �
 TREND_CHECK_LIMIT = 20      # 트렌드 조회는 API 부담이 있어 상위 N개만
 RETIRE_DAYS = 60            # 며칠 안 보이면 은퇴시킬 것인가
 MAX_KEYWORDS = 12           # 목록 최대 크기
+APPROVE_WAIT = int(os.environ.get("KEYWORD_WAIT_SECONDS", "600"))  # 10분
+POLL_INTERVAL = 20
 
 # 부동산·산업 문맥 판별어.
 # 제목에 이 중 하나라도 없는 기사는 통째로 버린다.
@@ -214,7 +216,52 @@ def send_telegram(text, timeout=20):
             res.read()
     except Exception as e:
         print("텔레그램 전송 오류: " + str(e))
+      
+def get_updates(offset, timeout=20):
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/getUpdates?" + \
+        urllib.parse.urlencode({"offset": offset, "timeout": 0})
+    try:
+        with urllib.request.urlopen(
+                urllib.request.Request(url), timeout=timeout) as res:
+            return json.load(res).get("result", [])
+    except Exception as e:
+        print("getUpdates 오류: " + str(e))
+        return []
 
+def wait_for_reply(seconds=APPROVE_WAIT):
+    """답장을 기다린다. 없으면 None."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return None
+    ups = get_updates(0)
+    baseline = max([u["update_id"] for u in ups], default=0)
+
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(POLL_INTERVAL)
+        ups = get_updates(baseline + 1)
+        msgs = [u for u in ups
+                if u.get("message", {}).get("chat", {}).get("id") == int(TELEGRAM_CHAT_ID)
+                and u.get("message", {}).get("text")]
+        if msgs:
+            return msgs[-1]["message"]["text"].strip()
+        print("대기 중... 남은 시간 {}초".format(int(deadline - time.time())))
+    return None
+
+def apply_commands(text, items):
+    """'+1 +3 -5' 형식의 답장으로 사용 여부를 바꾼다.
+
+    +번호 : 사용 목록에 넣는다 (pinned=True)
+    -번호 : 사용 목록에서 뺀다 (pinned=False)
+    """
+    changed = []
+    for m in re.finditer(r"([+-])\s*(\d+)", text):
+        sign, num = m.group(1), int(m.group(2))
+        if not (1 <= num <= len(items)):
+            continue
+        item = items[num - 1]
+        item["pinned"] = (sign == "+")
+        changed.append("{} {}".format(sign, item["keyword"]))
+    return changed
 
 def main():
     today = datetime.date.today()
@@ -324,45 +371,48 @@ def main():
     )[:MAX_KEYWORDS]
 
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    # ── 6. 후보 제시 & 승인 대기 ──────────────
+    lines = ["[지역 이슈 키워드 후보]", "기준일: " + today.isoformat(), ""]
+    lines.append("✅ = 사용 중 / ○ = 후보")
+    lines.append("")
+    for n, i in enumerate(items, 1):
+        mark = "✅" if i.get("pinned") else "○"
+        lines.append("{:2d}. {} {} (뉴스 {}회, 트렌드 {})".format(
+            n, mark, i["keyword"], i.get("news_count", 0),
+            round(float(i.get("trend", 0)), 1)))
+    if retired:
+        lines.append("")
+        lines.append("은퇴: " + ", ".join(retired))
+    lines += [
+        "",
+        "─────────────",
+        "쓸 것은 +번호, 뺄 것은 -번호로 답장해주세요.",
+        "예) +2 +5 -11",
+        "({}분 안에 무응답이면 현재 상태로 확정)".format(APPROVE_WAIT // 60),
+    ]
+    text = "\n".join(lines)
+    print(text)
+    send_telegram(text)
+
+    reply = wait_for_reply()
+    if reply:
+        changed = apply_commands(reply, items)
+        if changed:
+            print("변경: " + ", ".join(changed))
+            send_telegram("반영했습니다.\n" + "\n".join(changed))
+        else:
+            print("인식할 수 있는 명령이 없어 그대로 둡니다: " + reply)
+    else:
+        print("무응답 - 현재 상태로 확정합니다.")
+
+    active = [i["keyword"] for i in items if i.get("pinned")]
+    print("사용 목록 {}개: {}".format(len(active), ", ".join(active) or "(없음)"))
+
     with open(KEYWORD_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "updated": today.isoformat(),
             "source": "네이버 뉴스 최근 {}일 + 검색어 트렌드 검증".format(RECENT_DAYS),
             "keywords": items,
         }, f, ensure_ascii=False, indent=2)
-
-    print("저장: {} ({}개)".format(KEYWORD_FILE, len(items)))
-
-    # ── 6. 변화 알림 ──────────────────────────
-    new_ones = [i["keyword"] for i in items
-                if i.get("first_seen") == today.isoformat()]
-
-    lines = ["[지역 이슈 키워드 갱신]", "기준일: " + today.isoformat(), ""]
-    if new_ones:
-        lines.append("새로 추가")
-        for k in new_ones:
-            lines.append("  + " + k)
-        lines.append("")
-    if retired:
-        lines.append("은퇴 ({}일 이상 뉴스 없음)".format(RETIRE_DAYS))
-        for k in retired:
-            lines.append("  - " + k)
-        lines.append("")
-    lines.append("현재 목록 {}개".format(len(items)))
-    for i in items:
-        mark = "*" if i.get("pinned") else " "
-        lines.append("  {} {} (뉴스 {}회, 트렌드 {})".format(
-            mark, i["keyword"], i.get("news_count", 0), i.get("trend", 0)))
-    lines.append("")
-    lines.append("고정하고 싶은 키워드는 data/local_keywords.json 에서")
-    lines.append("pinned 를 true 로 바꾸면 자동 은퇴하지 않습니다.")
-
-    text = "\n".join(lines)
-    print()
-    print(text)
-    if new_ones or retired:
-        send_telegram(text)
-
-
-if __name__ == "__main__":
-    main()
+    print("저장: " + KEYWORD_FILE)
