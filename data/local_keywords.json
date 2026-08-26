@@ -16,7 +16,7 @@
       "last_seen": "2026-08-26",
       "news_count": 6,
       "trend": 100.0,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 어반원",
@@ -32,7 +32,7 @@
       "last_seen": "2026-08-26",
       "news_count": 6,
       "trend": 60.0,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 분양",
@@ -40,7 +40,7 @@
       "last_seen": "2026-08-26",
       "news_count": 2,
       "trend": 38.85793,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 부동산",
@@ -48,7 +48,7 @@
       "last_seen": "2026-08-26",
       "news_count": 4,
       "trend": 36.85897,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 집값",
@@ -56,7 +56,7 @@
       "last_seen": "2026-08-26",
       "news_count": 10,
       "trend": 28.0,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 이사",
@@ -72,7 +72,7 @@
       "last_seen": "2026-08-26",
       "news_count": 7,
       "trend": 24.14486,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 반도체",
@@ -80,7 +80,7 @@
       "last_seen": "2026-08-26",
       "news_count": 2,
       "trend": 23.33333,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 패밀리풀",
