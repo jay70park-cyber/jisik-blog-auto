@@ -97,6 +97,24 @@
       "news_count": 11,
       "trend": 3.96825,
       "pinned": false
+    },
+    {
+      "keyword": "동탄 고려대학교 병원",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 0,
+      "trend": 0.0,
+      "pinned": true,
+      "manual": true
+    },
+    {
+      "keyword": "동탄 성과급",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 0,
+      "trend": 0.0,
+      "pinned": true,
+      "manual": true
     }
   ]
 }
