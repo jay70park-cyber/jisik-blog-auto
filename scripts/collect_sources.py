@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 주간 소재 수집 스크립트
-- 6주 순환 카테고리 중 이번 주 카테고리를 결정
+- 요일과 주차에 따라 트랙을 결정 (월: 지산 5개 순환 / 목: 실거래·지역·경매)
 - 카테고리별 후보 키워드에 대해 블로그/카페 검색 결과 수 + 검색어 트렌드 지수를 수집
 - 가중합으로 관심도 스코어를 계산해 이번 주 대표 키워드를 선정
 - 결과를 collection_result.json / telegram_message.txt 로 저장
@@ -17,48 +17,33 @@ import datetime
 NAVER_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
 
+# ── 월요일: 5개 순환 (독자 여정 순서) ──
 CATEGORIES = {
-    "시세_투자분석": ["동탄 지식산업센터 시세", "지식산업센터 투자", "지식산업센터 임대수익률"],
-    "지역밀착": ["동탄 지식산업센터", "2동탄 지식산업센터", "동탄 GTX"],
-    "입문_기초": ["지식산업센터란", "지식산업센터 아파트형공장"],
-    "세제_정책": ["지식산업센터 취득세", "지식산업센터 임대사업자"],
-    "실무체크리스트": ["지식산업센터 계약 주의사항", "지식산업센터 분쟁"],
-    "전문가코너": ["지식산업센터 층고 하중", "지식산업센터 화물엘리베이터", "지식산업센터 수전용량"],
+    "개념_자격": ["동탄 지식산업센터 입주업종", "동탄 지식산업센터 조건", "동탄 지산 입주자격"],
+    "세금_정책": ["지식산업센터 취득세 감면", "동탄 지식산업센터 취득세", "지식산업센터 재산세"],
+    "물건_검증": ["동탄 지식산업센터 실거래가", "지식산업센터 등기부 확인", "동탄 지식산업센터 전용률"],
+    "시설_설비": ["지식산업센터 층고", "지식산업센터 바닥하중", "동탄 지식산업센터 주차"],
+    "거래_실행": ["동탄 지식산업센터 계약", "지식산업센터 대출", "동탄 지식산업센터 임대"],
 }
 CATEGORY_NAMES = {
-    "시세_투자분석": "시세·투자분석",
-    "지역밀착": "지역 밀착(2동탄)",
-    "입문_기초": "입문/기초",
-    "세제_정책": "세제·정책",
-    "실무체크리스트": "실무 체크리스트",
-    "전문가코너": "전문가 코너",
+    "개념_자격": "개념·입주자격",
+    "세금_정책": "세금·정책",
+    "물건_검증": "물건 검증",
+    "시설_설비": "시설·설비",
+    "거래_실행": "거래 실행",
 }
-ROTATION = ["시세_투자분석", "지역밀착", "입문_기초", "세제_정책", "실무체크리스트", "전문가코너"]
+ROTATION = ["개념_자격", "세금_정책", "물건_검증", "시설_설비", "거래_실행"]
 
-# ── 목요일 홀수주: 상가·공장 (지산 생태계) ──
-SANGGA_CATEGORIES = {
-    "단지내상가": ["지식산업센터 상가", "동탄 상가 분양", "지산 상가 임대"],
-    "배후상권": ["동탄 상가 임대", "동탄 상권 분석", "동탄 상가 월세"],
-    "소형공장": ["동탄 공장 매매", "동탄 창고 임대", "동탄 소형공장"],
-    "공장임대차": ["공장 임대차 계약", "동탄 공장 임대", "공장 부동산"],
-    "업종별입지": ["제조업 입지 조건", "지식산업센터 입주 업종", "동탄 공장 입지"],
-    "상품비교": ["지식산업센터 상가 비교", "공장 vs 지식산업센터", "동탄 수익형 부동산"],
-}
-SANGGA_NAMES = {
-    "단지내상가": "지산 단지 내 상가",
-    "배후상권": "지산 배후 상권",
-    "소형공장": "소형 공장·창고",
-    "공장임대차": "공장 임대차 실무",
-    "업종별입지": "업종별 입지 조건",
-    "상품비교": "지산·공장·상가 비교",
-}
-SANGGA_ROTATION = ["단지내상가", "배후상권", "소형공장", "공장임대차", "업종별입지", "상품비교"]
+# ── 목요일 1·3주: 실거래가 분석 ──
+REALPRICE_KEYWORDS = ["동탄 지식산업센터 시세", "동탄 상가 시세", "동탄 지식산업센터 매매"]
 
-# ── 목요일 짝수주: 지역 개발 이슈 ──
+# ── 목요일 2주: 지역 개발 이슈 ──
 LOCAL_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
 
+# ── 목요일 4주: 경매 (진전 있을 때, 없으면 지역 개발) ──
+AUCTION_KEYWORDS = ["지식산업센터 경매", "동탄 공장 경매", "상가 경매 권리분석"]
+
 # 순환의 기준 시작일 (이 주가 1번째 카테고리)
-BASE_DATE = datetime.date(2026, 8, 4)
 
 def naver_search_total(endpoint, query, timeout=15):
     """네이버 검색 API(블로그/카페 등)에서 검색결과 총 건수(total)를 가져온다."""
@@ -133,7 +118,13 @@ def next_rotation_index():
     
 def pick_track(today=None):
     """오늘 날짜로 (트랙, 카테고리키, 표시명, 키워드목록, 인덱스)을 결정한다.
-    GitHub 러너는 UTC로 돌므로 반드시 KST로 변환해서 요일을 판단한다."""
+    GitHub 러너는 UTC로 돌므로 반드시 KST로 변환해서 요일을 판단한다.
+
+    월요일        -> 지산 본류 5개 순환
+    목요일 1·3주  -> 실거래가 분석
+    목요일 2주    -> 지역 개발 이슈
+    목요일 4주    -> 경매 (환경변수 AUCTION_READY=1일 때만, 아니면 지역 개발)
+    """
     if today is None:
         kst = datetime.timezone(datetime.timedelta(hours=9))
         today = datetime.datetime.now(kst).date()
@@ -143,14 +134,16 @@ def pick_track(today=None):
         key = ROTATION[idx]
         return "jisik", key, CATEGORY_NAMES[key], CATEGORIES[key], idx
 
-    week = today.isocalendar()[1]
-    if week % 2 == 1:                 # 목요일 홀수주
-        idx = (week // 2) % len(SANGGA_ROTATION)
-        key = SANGGA_ROTATION[idx]
-        return "sangga", key, SANGGA_NAMES[key], SANGGA_CATEGORIES[key], idx
+    # 목요일 - 이 달의 몇 번째 주인가 (1~5)
+    week_of_month = (today.day - 1) // 7 + 1
 
-    idx = (week // 2) % len(LOCAL_KEYWORDS)
-    return "local", "지역이슈", "동탄 지역 개발 이슈", [LOCAL_KEYWORDS[idx]], idx
+    if week_of_month in (1, 3):
+        return "realprice", "실거래분석", "실거래가 분석", REALPRICE_KEYWORDS, week_of_month
+
+    if week_of_month == 4 and os.environ.get("AUCTION_READY") == "1":
+        return "auction", "경매취득", "경매 취득", AUCTION_KEYWORDS, week_of_month
+
+    return "local", "지역이슈", "동탄 지역 개발 이슈", LOCAL_KEYWORDS, week_of_month
 
 def main():
     track, category, category_display, keywords, idx = pick_track()
