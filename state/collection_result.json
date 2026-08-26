@@ -9,26 +9,19 @@
   },
   "rows": [
     {
-      "keyword": "동탄 반도체",
-      "blog": 121991,
-      "cafe": 236001,
-      "trend": 23.33333,
-      "score": 0.826
+      "keyword": "동탄 고려대학교 병원",
+      "blog": 10907,
+      "cafe": 3029,
+      "trend": 0.0,
+      "score": 0.482
     },
     {
-      "keyword": "동탄 교통 개발",
-      "blog": 184235,
-      "cafe": 372067,
+      "keyword": "동탄 성과급",
+      "blog": 9763,
+      "cafe": 3336,
       "trend": 0.0,
-      "score": 0.5
-    },
-    {
-      "keyword": "동탄 개발 호재",
-      "blog": 101649,
-      "cafe": 250706,
-      "trend": 0.0,
-      "score": 0.3
+      "score": 0.469
     }
   ],
-  "top_keyword": "동탄 반도체"
+  "top_keyword": "동탄 고려대학교 병원"
 }
