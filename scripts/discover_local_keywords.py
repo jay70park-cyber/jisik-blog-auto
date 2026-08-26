@@ -408,7 +408,7 @@ def main():
     if retired:
         lines.append("")
         lines.append("은퇴: " + ", ".join(retired))
-        lines += [
+    lines += [
         "",
         "─────────────",
         "뺄 것은 -번호로 답장해주세요. 예) -1 -4 -11",
