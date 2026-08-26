@@ -40,6 +40,26 @@ REALPRICE_KEYWORDS = ["동탄 지식산업센터 시세", "동탄 상가 시세"
 # ── 목요일 2주: 지역 개발 이슈 ──
 LOCAL_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
 
+def load_approved_local_keywords():
+    """discover_local_keywords.py 가 만든 목록에서 승인된 것만 가져온다.
+    파일이 없거나 승인된 게 없으면 위의 기본 목록을 쓴다."""
+    path = os.path.join("data", "local_keywords.json")
+    if not os.path.exists(path):
+        print("지역 키워드 파일 없음 - 기본 목록 사용")
+        return LOCAL_KEYWORDS
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        approved = [k["keyword"] for k in data.get("keywords", [])
+                    if k.get("pinned")]
+        if approved:
+            print("승인된 지역 키워드 {}개 사용".format(len(approved)))
+            return approved
+    except Exception as e:
+        print("지역 키워드 파일 읽기 실패: " + str(e))
+    print("승인된 키워드가 없어 기본 목록을 씁니다.")
+    return LOCAL_KEYWORDS
+    
 # ── 목요일 4주: 경매 (진전 있을 때, 없으면 지역 개발) ──
 AUCTION_KEYWORDS = ["지식산업센터 경매", "동탄 공장 경매", "상가 경매 권리분석"]
 
@@ -143,7 +163,7 @@ def pick_track(today=None):
     if week_of_month == 4 and os.environ.get("AUCTION_READY") == "1":
         return "auction", "경매취득", "경매 취득", AUCTION_KEYWORDS, week_of_month
 
-    return "local", "지역이슈", "동탄 지역 개발 이슈", LOCAL_KEYWORDS, week_of_month
+    return "local", "지역이슈", "동탄 지역 개발 이슈", load_approved_local_keywords(), week_of_month
 
 def main():
     track, category, category_display, keywords, idx = pick_track()
@@ -170,8 +190,16 @@ def main():
             3,
         )
 
+    # 트렌드지수 0은 검색 관심 신호가 없다는 뜻이라 후보에서 뺀다.
+    # 살아남은 것들 중에서 순환 인덱스로 고른다 (같은 키워드 반복 방지).
     rows.sort(key=lambda x: x["score"], reverse=True)
-    top = rows[0]
+    alive = [r for r in rows if r["trend"] > 0]
+    if not alive:
+        print("트렌드지수가 모두 0 - 전체 후보에서 순환합니다.")
+        alive = rows
+    top = alive[idx % len(alive)]
+    print("선정: {} (후보 {}개 중 {}번)".format(
+        top["keyword"], len(alive), idx % len(alive) + 1))
 
     result = {
         "week_index": idx,
