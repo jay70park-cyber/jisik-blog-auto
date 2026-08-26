@@ -80,6 +80,13 @@ STOPWORDS = {
     "교통약자", "어린이", "학생", "학부모", "병원", "진료",
 }
 
+# 이 말이 제목에 있으면 부동산 문맥어가 섞여 있어도 버린다.
+EXCLUDE_WORDS = {
+    "패밀리풀", "물놀이", "워터파크", "수영장", "축제", "공연",
+    "맛집", "카페", "나들이", "봉사", "기부", "사회공헌",
+    "홈즈", "연예", "예능", "방송", "출연", "집들이", "인테리어",
+    "행사", "개최", "체험", "이벤트", "경품", "이사",
+}
 
 def strip_tags(s):
     """네이버 검색 결과의 <b> 태그와 HTML 엔티티를 걷어낸다."""
@@ -228,6 +235,9 @@ def main():
             if pub and pub < cutoff:
                 continue
             title = strip_tags(it.get("title", ""))
+            if any(w in title for w in EXCLUDE_WORDS):
+                skipped += 1                          
+                continue                              
             if not any(w in title for w in CONTEXT_WORDS):
                 skipped += 1
                 continue
