@@ -87,10 +87,23 @@ def call_claude_with_search(prompt, timeout=280):
     print("생성된 텍스트 길이: " + str(len(text)))
     return text
 
-
+def load_realprice_summary(max_chars=1800):
+    """실거래 분석 요약을 읽어온다. 파일이 없으면 빈 문자열."""
+    path = os.path.join("data", "analysis_summary.txt")
+    if not os.path.exists(path):
+        print("실거래 요약 파일 없음 - 시세 없이 진행합니다.")
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n(이하 생략)"
+    print("실거래 요약 로드: {}자".format(len(text)))
+    return text
+    
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
+    realprice = load_realprice_summary()   
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
     kw = result["top_keyword"]
 
@@ -112,6 +125,18 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 링크 앞에 어떤 값을 넣으면 무엇을 알 수 있는지 한 줄로 안내하세요.
    - 계산기 결과는 참고용이며 실제 조건은 다를 수 있다는 점을 한 문장으로 덧붙이세요."""
 
+    realprice_block = ""
+    if realprice:
+        realprice_block = f"""[실거래 데이터 — 직접 수집한 자료]
+{realprice}
+
+이 수치는 국토교통부 실거래가 공개시스템에서 직접 수집·집계한 것입니다.
+- 본문에서 시세를 언급할 때 이 데이터를 우선 사용하고, 출처를 "국토교통부 실거래가 공개시스템(직접 집계)"로 밝히세요.
+- 평당가는 모두 건물면적(계약면적) 기준입니다. 전용면적 기준이 아니라는 점을 한 번은 명시하세요.
+- 이 데이터에 없는 수치는 웹 검색으로 찾되, 그래도 확인이 안 되면 자리표시자로 남기세요.
+- 거래 건수가 적은 항목(10건 미만)은 참고치임을 밝히세요.
+"""
+
     prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
 오늘 날짜는 {today} 입니다.
 
@@ -128,6 +153,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 [참고 링크 후보 (네이버 블로그)]
 {refs_desc}
 
+{realprice_block}
 ──────────────────────────────
 가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**
 독자가 다 읽고 나서 "그래서 나는 무엇을 하면 되는가"에 스스로 답할 수 있어야 합니다.
