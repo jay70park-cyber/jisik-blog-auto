@@ -416,3 +416,6 @@ def main():
             "keywords": items,
         }, f, ensure_ascii=False, indent=2)
     print("저장: " + KEYWORD_FILE)
+
+if __name__ == "__main__":
+    main()
