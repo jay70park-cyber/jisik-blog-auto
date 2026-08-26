@@ -12,7 +12,7 @@ concurrency:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       PYTHONIOENCODING: utf-8
       LANG: C.UTF-8
