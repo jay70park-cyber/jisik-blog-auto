@@ -9,19 +9,68 @@
   },
   "rows": [
     {
+      "keyword": "동탄 서울",
+      "blog": 1324203,
+      "cafe": 2005407,
+      "trend": 60.0,
+      "score": 0.673
+    },
+    {
+      "keyword": "동탄 신도시",
+      "blog": 852477,
+      "cafe": 5479009,
+      "trend": 24.14486,
+      "score": 0.514
+    },
+    {
+      "keyword": "동탄 임장",
+      "blog": 31239,
+      "cafe": 25750,
+      "trend": 100.0,
+      "score": 0.508
+    },
+    {
+      "keyword": "동탄 부동산",
+      "blog": 674564,
+      "cafe": 1515074,
+      "trend": 36.85897,
+      "score": 0.392
+    },
+    {
+      "keyword": "동탄 분양",
+      "blog": 509594,
+      "cafe": 2227161,
+      "trend": 38.85793,
+      "score": 0.391
+    },
+    {
+      "keyword": "동탄 집값",
+      "blog": 91314,
+      "cafe": 166834,
+      "trend": 28.0,
+      "score": 0.167
+    },
+    {
+      "keyword": "동탄 반도체",
+      "blog": 122150,
+      "cafe": 236025,
+      "trend": 23.33333,
+      "score": 0.153
+    },
+    {
       "keyword": "동탄 고려대학교 병원",
-      "blog": 10907,
-      "cafe": 3029,
+      "blog": 10919,
+      "cafe": 3032,
       "trend": 0.0,
-      "score": 0.482
+      "score": 0.003
     },
     {
       "keyword": "동탄 성과급",
-      "blog": 9763,
-      "cafe": 3336,
+      "blog": 9779,
+      "cafe": 3338,
       "trend": 0.0,
-      "score": 0.469
+      "score": 0.002
     }
   ],
-  "top_keyword": "동탄 고려대학교 병원"
+  "top_keyword": "동탄 분양"
 }
