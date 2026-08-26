@@ -228,6 +228,10 @@ def main():
             if pub and pub < cutoff:
                 continue
             title = strip_tags(it.get("title", ""))
+            if not any(w in title for w in CONTEXT_WORDS):
+                skipped += 1
+                continue
+            titles.append(title)
             # 부동산·산업 문맥이 없는 기사는 버린다.
             # 이 한 줄이 워터파크·연예 기사를 통째로 걸러낸다.
             if not any(w in title for w in CONTEXT_WORDS):
