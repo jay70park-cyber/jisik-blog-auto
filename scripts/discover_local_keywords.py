@@ -20,6 +20,7 @@ import time
 import datetime
 import urllib.request
 import urllib.parse
+import xml.etree.ElementTree as ET
 
 NAVER_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
@@ -63,23 +64,46 @@ def strip_tags(s):
         s = s.replace(a, b)
     return s.strip()
 
-
 def fetch_news(query, display=100, timeout=20):
-    """네이버 뉴스 검색. 최신순으로 가져온다."""
-    url = "https://naverapihub.apigw.ntruss.com/search/v1/news?" + urllib.parse.urlencode(
-        {"query": query, "display": display, "sort": "date"}
-    )
+    """구글 뉴스 RSS에서 기사 목록을 가져온다.
+
+    네이버 뉴스 API는 별도 신청 대상이라 401이 떠서 이쪽을 쓴다.
+    인증이 없고 최신순으로 오며, 제목과 발행일만 있으면 충분하다.
+    반환 형식은 네이버 API와 맞춰 title/link/pubDate 키를 쓴다.
+    """
+    url = "https://news.google.com/rss/search?" + urllib.parse.urlencode({
+        "q": query,
+        "hl": "ko",
+        "gl": "KR",
+        "ceid": "KR:ko",
+    })
     req = urllib.request.Request(url, headers={
-        "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
-        "X-NCP-APIGW-API-KEY": NAVER_SECRET,
+        # User-Agent가 없으면 구글이 거부하는 경우가 있다
+        "User-Agent": "Mozilla/5.0 (compatible; jisik-blog-auto/1.0)",
     })
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
-            return json.load(res).get("items", [])
+            xml_text = res.read().decode("utf-8", errors="replace")
     except Exception as e:
         print("뉴스 검색 오류(" + query + "): " + str(e))
         return []
 
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        print("RSS 파싱 오류(" + query + "): " + str(e))
+        return []
+
+    items = []
+    for it in root.iter("item"):
+        items.append({
+            "title": (it.findtext("title") or "").strip(),
+            "link": (it.findtext("link") or "").strip(),
+            "pubDate": (it.findtext("pubDate") or "").strip(),
+        })
+        if len(items) >= display:
+            break
+    return items
 
 def parse_pubdate(s):
     """'Mon, 25 Aug 2026 09:00:00 +0900' 형식을 date로."""
