@@ -163,6 +163,7 @@ def format_history(plans):
 def build_plan_prompt(result, feedback=None, previous=None):
     kw = result["top_keyword"]
     cat = result["category_display"]
+    history = format_history(load_history()) 
     base = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 기획을 돕습니다.
 
 이번 글의 카테고리는 "{cat}", 검색 관심도 1위 키워드는 "{kw}" 입니다.
