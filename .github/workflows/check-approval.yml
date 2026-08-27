@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # 평상시 15분 주기는 cron-job.org가 담당한다.
-    # 여기 예약은 외부 크론이 멈췄을 때를 대비한 백업(시간당 1회)이다.
-   - cron: '*/30 * * * *'
+    # 여기 예약은 외부 크론이 멈췄을 때를 대비한 백업(30분당 1회)이다.
+    - cron: '*/30 * * * *'
 
 # 두 트리거가 겹쳐 같은 답장을 두 번 처리하거나 state/ 커밋이 충돌하지 않도록
 # 한 번에 하나만 실행되게 하고, 뒤에 온 실행은 취소하지 않고 대기시킨다.
@@ -45,9 +45,11 @@ jobs:
           python3 scripts/check_and_publish.py
 
       - name: Commit updated state
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add state/
           git diff --cached --quiet || git commit -m "Update approval state [skip ci]"
+          git pull --rebase origin main || true
           git push
