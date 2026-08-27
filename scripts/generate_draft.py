@@ -645,7 +645,8 @@ def main():
         print("기획안 파일이 없어 기본 구조로 진행합니다.")
 
     refs = fetch_reference_links(result["top_keyword"])
-    prompt = build_prompt(result, refs, today, plan=plan)
+    track = result.get("track", "jisik")
+    prompt = build_prompt(result, refs, today, plan=plan, category=track)
 
     draft = call_claude_with_search(prompt)
 
