@@ -13,6 +13,7 @@
 import os
 import json
 import time
+import datetime
 import urllib.request
 import urllib.parse
 
@@ -23,6 +24,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 MODEL = "claude-sonnet-5"
 STATE_DIR = "state"
 PLAN_FILE = os.path.join(STATE_DIR, "plan.json")
+HISTORY_FILE = os.path.join(STATE_DIR, "plan_history.json")
 
 CALC_URL = os.environ.get("CALC_URL", "https://jay70park-cyber.github.io/jisik-calc/")
 
@@ -102,7 +104,62 @@ def parse_json(text):
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
+HISTORY_KEEP = 8          # 최근 몇 회를 기억할 것인가
 
+
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("plans", [])
+    except Exception as e:
+        print("기획 이력 읽기 실패: " + str(e))
+        return []
+
+
+def save_history(plan, result):
+    """이번 기획을 이력에 남긴다. 오래된 것은 버린다."""
+    plans = load_history()
+    plans.append({
+        "date": datetime.date.today().isoformat(),
+        "category": result.get("category_display", ""),
+        "keyword": result.get("top_keyword", ""),
+        "reader": plan.get("reader", ""),
+        "output_type": plan.get("output_type", ""),
+        "conclusion": plan.get("conclusion", ""),
+        "criteria": plan.get("criteria", [])[:3],
+    })
+    plans = plans[-HISTORY_KEEP:]
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump({"plans": plans}, f, ensure_ascii=False, indent=2)
+    print("기획 이력 저장: {}건 보관".format(len(plans)))
+
+
+def format_history(plans):
+    """프롬프트에 넣을 이력 요약. 없으면 빈 문자열."""
+    if not plans:
+        return ""
+    lines = ["[최근 기획 이력 — 이것과 겹치지 않게 만드세요]"]
+    for p in plans:
+        crit = " / ".join(c[:28] for c in p.get("criteria", [])[:3])
+        lines.append("- {} {} | 독자: {} | 산출물: {}".format(
+            p.get("date", ""), p.get("keyword", ""),
+            p.get("reader", ""), p.get("output_type", "")[:12]))
+        if crit:
+            lines.append("    판단기준: " + crit)
+    lines += [
+        "",
+        "위 목록을 보고 아래를 지키세요.",
+        "- 최근 3회에 쓴 독자는 고르지 마세요. 매번 같은 독자를 겨냥하면 글이 똑같아집니다.",
+        "- 최근 3회에 쓴 산출물 유형도 피하세요.",
+        "- 판단 기준에 이미 쓴 항목(전용률, 입주업종 등)을 그대로 반복하지 마세요.",
+        "  같은 주제라도 이번 키워드에서만 나올 수 있는 기준을 찾으세요.",
+        "",
+    ]
+    return "\n".join(lines)
+  
 def build_plan_prompt(result, feedback=None, previous=None):
     kw = result["top_keyword"]
     cat = result["category_display"]
@@ -110,6 +167,7 @@ def build_plan_prompt(result, feedback=None, previous=None):
 
 이번 글의 카테고리는 "{cat}", 검색 관심도 1위 키워드는 "{kw}" 입니다.
 
+{history}
 이 키워드로 글을 쓰기 전에 기획안을 먼저 만드세요. 원칙은 아래와 같습니다.
 
 1. 독자는 반드시 한 명만 고릅니다. 후보: {", ".join(READERS)}
@@ -244,6 +302,7 @@ def main():
     else:
         print("수정 횟수 상한 도달 — 현재 기획안으로 진행합니다.")
 
+    save_history(plan, result)
     plan["calc_url"] = CALC_URL
     with open(PLAN_FILE, "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
