@@ -190,7 +190,7 @@ def call_claude(prompt, timeout=180):
     url = "https://api.anthropic.com/v1/messages"
     body = json.dumps({
         "model": MODEL,
-        "max_tokens": 2000,
+        "max_tokens": 8000,
         "messages": [{"role": "user", "content": prompt}],
     }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers={
@@ -207,6 +207,9 @@ def call_claude(prompt, timeout=180):
 def check_semantic(plan, draft):
     try:
         raw = call_claude(build_verify_prompt(plan, draft))
+        if not raw or not raw.strip():
+            print("의미 검사 실패: Claude 응답이 비어 있습니다 (토큰 한도 확인)")
+            return None
         raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
     except Exception as e:
@@ -280,12 +283,15 @@ def main():
         all_verdicts += [i.get("verdict", "") for i in sem.get("items", [])]
     fails = all_verdicts.count("실패")
     warns = all_verdicts.count("주의")
+    checks = all_verdicts.count("확인 필요")
 
     lines += ["", "─────────────"]
     if fails:
         lines.append("실패 {}건, 주의 {}건 — 수정을 권합니다.".format(fails, warns))
     elif warns:
         lines.append("주의 {}건 — 확인 후 발행하세요.".format(warns))
+    elif checks:
+        lines.append("형식은 통과. 자리표시자 {}곳만 채우면 됩니다.".format(checks))
     else:
         lines.append("모두 통과했습니다.")
 
