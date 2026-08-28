@@ -1,14 +1,14 @@
 {
-  "updated": "2026-08-26",
+  "updated": "2026-08-28",
   "source": "네이버 뉴스 최근 21일 + 검색어 트렌드 검증",
   "keywords": [
     {
-      "keyword": "동탄 분당",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 2,
+      "keyword": "동탄 동탄역",
+      "first_seen": "2026-08-28",
+      "last_seen": "2026-08-28",
+      "news_count": 3,
       "trend": 100.0,
-      "pinned": false
+      "pinned": true
     },
     {
       "keyword": "동탄 임장",
@@ -19,12 +19,12 @@
       "pinned": true
     },
     {
-      "keyword": "동탄 어반원",
+      "keyword": "동탄 부동산",
       "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 4,
-      "trend": 74.07407,
-      "pinned": false
+      "last_seen": "2026-08-28",
+      "news_count": 2,
+      "trend": 81.89102,
+      "pinned": true
     },
     {
       "keyword": "동탄 서울",
@@ -43,28 +43,12 @@
       "pinned": true
     },
     {
-      "keyword": "동탄 부동산",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 4,
-      "trend": 36.85897,
-      "pinned": true
-    },
-    {
       "keyword": "동탄 집값",
       "first_seen": "2026-08-26",
       "last_seen": "2026-08-26",
       "news_count": 10,
       "trend": 28.0,
       "pinned": true
-    },
-    {
-      "keyword": "동탄 이사",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 8,
-      "trend": 25.0,
-      "pinned": false
     },
     {
       "keyword": "동탄 신도시",
@@ -83,22 +67,6 @@
       "pinned": true
     },
     {
-      "keyword": "동탄 패밀리풀",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 8,
-      "trend": 6.15696,
-      "pinned": false
-    },
-    {
-      "keyword": "동탄 행사",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 11,
-      "trend": 3.96825,
-      "pinned": false
-    },
-    {
       "keyword": "동탄 고려대학교 병원",
       "first_seen": "2026-08-26",
       "last_seen": "2026-08-26",
@@ -115,6 +83,22 @@
       "trend": 0.0,
       "pinned": true,
       "manual": true
+    },
+    {
+      "keyword": "동탄 어반원",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-28",
+      "news_count": 3,
+      "trend": 100.0,
+      "pinned": false
+    },
+    {
+      "keyword": "동탄 분당",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-08-26",
+      "news_count": 2,
+      "trend": 100.0,
+      "pinned": false
     }
   ]
 }
