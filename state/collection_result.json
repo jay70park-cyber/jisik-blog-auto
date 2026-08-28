@@ -4,70 +4,77 @@
   "category": "지역이슈",
   "category_display": "동탄 지역 개발 이슈",
   "period": {
-    "start": "2026-07-30",
-    "end": "2026-08-27"
+    "start": "2026-07-31",
+    "end": "2026-08-28"
   },
   "rows": [
     {
+      "keyword": "동탄 신도시",
+      "blog": 854403,
+      "cafe": 5481517,
+      "trend": 85.71428,
+      "score": 0.822
+    },
+    {
+      "keyword": "동탄 동탄역",
+      "blog": 1222797,
+      "cafe": 1057777,
+      "trend": 100.0,
+      "score": 0.815
+    },
+    {
       "keyword": "동탄 서울",
-      "blog": 1325238,
-      "cafe": 2007429,
+      "blog": 1326470,
+      "cafe": 2008676,
       "trend": 60.0,
       "score": 0.673
     },
     {
-      "keyword": "동탄 신도시",
-      "blog": 853434,
-      "cafe": 5480357,
-      "trend": 40.64386,
-      "score": 0.596
+      "keyword": "동탄 부동산",
+      "blog": 676398,
+      "cafe": 1516254,
+      "trend": 81.89102,
+      "score": 0.618
     },
     {
-      "keyword": "동탄 부동산",
-      "blog": 675362,
-      "cafe": 1515698,
-      "trend": 60.57692,
-      "score": 0.511
+      "keyword": "동탄 분양",
+      "blog": 510898,
+      "cafe": 2228506,
+      "trend": 72.84122,
+      "score": 0.561
     },
     {
       "keyword": "동탄 임장",
-      "blog": 31271,
-      "cafe": 25771,
+      "blog": 31327,
+      "cafe": 25799,
       "trend": 100.0,
       "score": 0.508
     },
     {
-      "keyword": "동탄 분양",
-      "blog": 510172,
-      "cafe": 2228008,
-      "trend": 57.24233,
-      "score": 0.483
-    },
-    {
       "keyword": "동탄 집값",
-      "blog": 91499,
-      "cafe": 166935,
-      "trend": 42.96296,
-      "score": 0.242
+      "blog": 91750,
+      "cafe": 167031,
+      "trend": 71.85185,
+      "score": 0.386
     },
     {
       "keyword": "동탄 반도체",
-      "blog": 122298,
-      "cafe": 236087,
+      "blog": 122650,
+      "cafe": 236161,
       "trend": 33.33333,
       "score": 0.203
     },
     {
       "keyword": "동탄 고려대학교 병원",
-      "blog": 10913,
-      "cafe": 3034,
+      "blog": 10922,
+      "cafe": 3038,
       "trend": 0.0,
       "score": 0.003
     },
     {
       "keyword": "동탄 성과급",
-      "blog": 9788,
-      "cafe": 3350,
+      "blog": 9837,
+      "cafe": 3358,
       "trend": 0.0,
       "score": 0.002
     }
