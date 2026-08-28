@@ -99,11 +99,38 @@ def load_realprice_summary(max_chars=1800):
         text = text[:max_chars] + "\n(이하 생략)"
     print("실거래 요약 로드: {}자".format(len(text)))
     return text
+
+def load_local_headlines(keyword="", max_items=25):
+    """지역 트랙일 때 쓸 최근 뉴스 제목. 키워드와 관련된 것을 앞에 둔다."""
+    path = os.path.join("data", "local_headlines.json")
+    if not os.path.exists(path):
+        print("뉴스 제목 파일 없음 - 검색으로 대체합니다.")
+        return "", ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        print("뉴스 제목 읽기 실패: " + str(e))
+        return "", ""
+
+    titles = data.get("headlines", [])
+    if not titles:
+        return "", ""
+
+    # 이번 키워드의 낱말이 들어간 제목을 앞으로 끌어올린다
+    words = [w for w in keyword.replace("동탄", "").split() if len(w) >= 2]
+    hit = [t for t in titles if any(w in t for w in words)]
+    rest = [t for t in titles if t not in hit]
+    picked = (hit + rest)[:max_items]
+
+    print("뉴스 제목 로드: {}건 (키워드 관련 {}건)".format(len(picked), len(hit)))
+    return "\n".join("- " + t for t in picked), data.get("updated", "")
     
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
-    realprice = load_realprice_summary()   
+        realprice = load_realprice_summary()
+    headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
     kw = result["top_keyword"]
 
@@ -137,6 +164,18 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 거래 건수가 적은 항목(10건 미만)은 참고치임을 밝히세요.
 """
 
+    realprice_block = ""
+    if realprice:
+        realprice_block = f"""[실거래 데이터 — 직접 수집한 자료]
+{realprice}
+
+이 수치는 국토교통부 실거래가 공개시스템에서 직접 수집·집계한 것입니다.
+- 본문에서 시세를 언급할 때 ...
+- 거래 건수가 적은 항목(10건 미만)은 참고치임을 밝히세요.
+"""
+
+    prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
+
     prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
 오늘 날짜는 {today} 입니다.
 
@@ -154,6 +193,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 {refs_desc}
 
 {realprice_block}
+{news_block}
 ──────────────────────────────
 가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**
 독자가 다 읽고 나서 "그래서 나는 무엇을 하면 되는가"에 스스로 답할 수 있어야 합니다.
