@@ -129,7 +129,7 @@ def load_local_headlines(keyword="", max_items=25):
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
-        realprice = load_realprice_summary()
+    realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
     kw = result["top_keyword"]
@@ -164,17 +164,29 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 거래 건수가 적은 항목(10건 미만)은 참고치임을 밝히세요.
 """
 
-    realprice_block = ""
+        realprice_block = ""
     if realprice:
         realprice_block = f"""[실거래 데이터 — 직접 수집한 자료]
 {realprice}
 
 이 수치는 국토교통부 실거래가 공개시스템에서 직접 수집·집계한 것입니다.
-- 본문에서 시세를 언급할 때 ...
+- 본문에서 시세를 언급할 때 이 데이터를 우선 사용하고, 출처를 "국토교통부 실거래가 공개시스템(직접 집계)"로 밝히세요.
+- 평당가는 모두 건물면적(계약면적) 기준입니다. 전용면적 기준이 아니라는 점을 한 번은 명시하세요.
+- 이 데이터에 없는 수치는 웹 검색으로 찾되, 그래도 확인이 안 되면 자리표시자로 남기세요.
 - 거래 건수가 적은 항목(10건 미만)은 참고치임을 밝히세요.
 """
 
-    prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
+    news_block = ""
+    if headlines:
+        news_block = f"""[최근 지역 뉴스 제목 — {hl_date} 수집]
+{headlines}
+
+- 위 제목들은 최근 3주간 동탄 관련 부동산·산업 기사에서 모은 것입니다.
+- 이 중 이번 주제와 맞닿은 것을 골라 글의 출발점으로 삼으세요.
+  무엇이 실제로 진행되고 있는지가 여기 드러납니다.
+- 제목만 있으므로 구체적 내용은 웹 검색으로 확인하고, 확인된 것만 쓰세요.
+- 제목을 그대로 나열하지 마세요. 흐름을 읽고 하나의 이야기로 엮으세요.
+"""
 
     prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
 오늘 날짜는 {today} 입니다.
