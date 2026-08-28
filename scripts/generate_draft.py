@@ -129,12 +129,20 @@ def load_local_headlines(keyword="", max_items=25):
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
-    realprice = load_realprice_summary()
+    
+       reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
+
+    # 우리 실거래 데이터는 매매만 있다. 임차인 독자에게는 재료가 되지 못하고,
+    # 오히려 임대차 판단과 무관한 매매 평당가로 섹션이 채워지는 부작용이 있다.
+    if "임차" in reader:
+        realprice = ""
+        print("임차인 독자 - 매매 실거래 데이터는 넘기지 않습니다.")
+    else:
+        realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
     kw = result["top_keyword"]
 
-    reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
     output_type = plan.get("output_type", "② 합격/불합격 기준")
     conclusion = plan.get("conclusion", "")
     criteria = plan.get("criteria", [])
