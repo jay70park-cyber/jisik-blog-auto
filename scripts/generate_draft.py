@@ -152,7 +152,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 링크 앞에 어떤 값을 넣으면 무엇을 알 수 있는지 한 줄로 안내하세요.
    - 계산기 결과는 참고용이며 실제 조건은 다를 수 있다는 점을 한 문장으로 덧붙이세요."""
 
-        realprice_block = ""
+    realprice_block = ""
     if realprice:
         realprice_block = f"""[실거래 데이터 — 직접 수집한 자료]
 {realprice}
