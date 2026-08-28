@@ -84,7 +84,7 @@ def is_approval(text):
 def call_claude(prompt, timeout=120):
     url = "https://api.anthropic.com/v1/messages"
     body = json.dumps(
-        {"model": MODEL, "max_tokens": 1500, "messages": [{"role": "user", "content": prompt}]},
+        {"model": MODEL, "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}]},
         ensure_ascii=False,
     ).encode("utf-8")
     req = urllib.request.Request(
@@ -101,6 +101,8 @@ def call_claude(prompt, timeout=120):
 
 
 def parse_json(text):
+    if not text or not text.strip():
+        raise ValueError("Claude 응답이 비어 있습니다 (토큰 한도 확인)")
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
