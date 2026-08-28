@@ -37,7 +37,7 @@ BANNED = [
 ]
 
 MIN_CHARS = 2000
-MAX_CHARS = 3400          # 3000자 기준에 여유를 둔다
+MAX_CHARS = 3600          # 3000자 기준에 여유를 둔다
 MIN_HASHTAGS = 5
 
 
