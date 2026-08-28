@@ -5,196 +5,126 @@
 <title>수정된 초안</title>
 </head>
 <body style="font-family:-apple-system,'Malgun Gothic',sans-serif;font-size:21px;line-height:1.8;color:#222;max-width:820px;margin:24px auto;padding:0 16px;">
-<h1 style="font-size:29px;line-height:1.4;color:#1F3C88;font-weight:800;padding:0;">동탄 분양 임대수익률, 5단계 계산 공식</h1>
+<h1 style="font-size:29px;line-height:1.4;color:#1F3C88;font-weight:800;padding:0;">동탄지식산업센터 분양 vs 준공 임대수익 비교</h1>
 <p style="background:#F5F6FA;border-radius:10px;padding:16px 18px;color:#444;font-size:19px;line-height:1.7;">최근 지식산업센터 관련 검색 데이터를 살펴보니, <strong style="color:#1F3C88;font-weight:700;">동탄 분양</strong>을(를) 찾아보는 분들이 가장 많았습니다.<br>그래서 이번 글에서는 이 주제를 중심으로, 실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다.</p>
 <div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">3초 요약</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
-<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">동탄 분양 임대수익률은 분양가만 놓고 계산하면 실제보다 높게 나옵니다.</strong> 부가세·옵션비·관리비 예치금까지 더한 '실제 투입 총액'을 기준으로 다시 계산해야 정확한 숫자가 나옵니다. 분양 공고문의 수익률 문구만 보고 판단한 적이 있다면 이 글이 필요합니다. 반대로 실사용 목적으로 사무실을 구하는 분이라면 이 계산은 해당사항이 없으니 다른 글을 찾아보시는 게 시간 절약입니다.</p>
-<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">왜 지금 동탄 분양 임대수익률을 따져야 하나</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
-<p style="line-height:1.8;color:#222;font-size:21px;">동탄 테크노밸리를 중심으로 지식산업센터(제조업·IT·벤처기업 등이 입주하는 업무·공장 복합시설) 분양 공고가 꾸준히 이어지고 있습니다. 분양 광고에는 대부분 "연 수익률 O%"라는 문구가 큼직하게 붙어 있습니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;">그런데 이 수익률의 분모, 즉 실투자금이 얼마인지는 작은 글씨로 처리되거나 아예 빠져 있는 경우가 많습니다. 분양가에 건물분 부가세와 옵션비, 관리비 예치금이 빠진 채 계산된 수익률은 실제 내가 넣는 돈과 다른 숫자입니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;">분양 상담을 받을 때는 아래 문장을 그대로 물어보는 것으로 시작하면 됩니다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">동탄지식산업센터를 분양으로 매입할지, 준공 매물을 살지는 개발 호재의 확정 단계와 공실 리스크를 같은 기준으로 비교해야 답이 나온다.</strong></p>
 <ul>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">"이 수익률은 부가세·옵션비·관리비 예치금·대출이자를 포함한 실투자금 기준인가요?"</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">이 글이 필요한 사람: 동탄에서 지식산업센터·오피스텔을 임대수익 목적으로 매입하려는 투자자</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">이 글이 필요 없는 사람: 실입주·실사용 목적으로 사무실을 구하는 사람 (이 글은 수익률 계산만 다룹니다)</li>
 </ul>
-<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">무엇이 근거인가: 동탄 분양 임대수익률 계산 공식 5단계</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
-<p style="line-height:1.8;color:#222;font-size:21px;">동탄 분양 임대수익률 계산은 아래 표에 내 물건의 숫자를 순서대로 채우면 끝입니다.</p>
-<table align="center" style="border-collapse:collapse;width:100%;font-size:18px;">
-<thead>
-<tr>
-<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">항목</th>
-<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">계산식</th>
-<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;text-align: right;">내 숫자</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">분양가(토지+건물)</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">분양계약서 공급가액</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">건물분 부가세</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">건물가 × 10%</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">옵션비</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">발코니확장+시스템에어컨 등 견적 합산</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">관리비 예치금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">시행사 고지 금액</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">대출금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">분양가 × 대출비율(%)</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">총 투입비용</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">분양가+부가세+옵션비+예치금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">실투자금(자기자본)</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">총 투입비용 − 대출금 − 임대보증금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 임대료</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">월세 × 12</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 대출이자</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">대출금 × 금리</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 순수익</td>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 임대료 − 연 이자</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;"><strong style="color:#B8451D;font-weight:700;">임대수익률</strong></td>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 순수익 ÷ 실투자금 × 100</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">___%</td>
-</tr>
-</tbody>
-</table>
-<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">계산 예시 (전용 30평, 지식산업센터 오피스 가정)</strong></p>
-<ul>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">분양가 3억 5,000만 원(건물분 1억 7,500만 원 가정), 대출 60%·금리 5%, 보증금 3,000만 원 / 월세 150만 원</li>
-</ul>
-<table align="center" style="border-collapse:collapse;width:100%;font-size:18px;">
-<thead>
-<tr>
-<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">항목</th>
-<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;text-align: right;">금액</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">분양가</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">350,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">건물분 부가세</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">17,500,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">옵션비</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">9,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">관리비 예치금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">3,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">총 투입비용</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">379,500,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">대출금(60%)</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">210,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">임대보증금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">30,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">실투자금</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">139,500,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 임대료</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">18,000,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 대출이자</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">10,500,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;">연 순수익</td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">7,500,000원</td>
-</tr>
-<tr>
-<td style="border:1px solid #ddd;padding:10px 12px;"><strong style="color:#B8451D;font-weight:700;">임대수익률</strong></td>
-<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;"><strong style="color:#B8451D;font-weight:700;">5.4%</strong></td>
-</tr>
-</tbody>
-</table>
-<p style="line-height:1.8;color:#222;font-size:21px;">분양가·대출·보증금만 넣고 계산하면 자기자본이 1억 1,000만 원으로 나와 수익률이 6.8%로 보입니다. 부가세와 옵션비, 관리비 예치금까지 넣으면 5.4%로 내려갑니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;">건물분 부가세는 조기환급 대상이면 세금계산서를 받은 달의 다음 달 25일까지 신고합니다. 관할 세무서장은 예정신고 기한이 지난 후 15~20일 이내에 환급하도록 부가가치세법 시행령에 정해져 있어, 신고 시점과 무관하게 환급까지는 15~20일이 걸립니다.</p>
+<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">왜 지금인가</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;">최근 동탄 분양 시장이 다시 움직이는 이유는 두 가지다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;">첫째, 동탄 도시철도(트램) 사업이 실제로 행정 절차 단계에 들어섰다. 화성특례시는 1단계 사업의 연내 일부 구간 착공을 목표로, 단독 응찰한 DL이앤씨 컨소시엄과 수의계약 절차를 밟고 있다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;">이 사업은 2023년 착공·2027년 개통을 목표로 했으나 3차 입찰까지 유찰되며 일정이 밀렸다. 지금 수의계약 단계로 넘어간 것은 "구상"에서 "행정 절차"로 이동했다는 뜻이지, 착공이 확정됐다는 뜻은 아니다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;">둘째, 동탄역 역세권에서 신규 오피스텔 공급이 이어지고 있다. 전용 34~59㎡ 총 240실 규모로 화성시 오산동 동탄2신도시 C14블록에 조성되며, 비규제지역이라 전매가 가능하다. 입주는 2028년 7월 예정이다.</p>
 <div style="padding:12px 16px;background:#f4f6fa;border-left:5px solid #C9932F;border-radius:6px;color:#555;font-size:17px;line-height:1.65;">
-<p style="line-height:1.8;color:#222;font-size:21px;">근거: 부가가치세법 시행령 제107조(조기환급) (https://www.law.go.kr/lsLawLinkInfo.do?lsJoLnkSeq=900329579&amp;chrClsCd=010202)</p>
+<p style="line-height:1.8;color:#222;font-size:21px;">근거: 중부일보 「금주의 화성시」, 아주경제·경향신문·서울경제 「e편한세상 동탄역 어반원」 관련 기사 (2026년 3월)</p>
 </div>
-<p style="line-height:1.8;color:#222;font-size:21px;">환급 후 기준 실투자금은 1억 2,200만 원, 수익률은 약 6.1%로 다시 올라갑니다.</p>
-<div style="margin:16px 0;padding:14px 16px;background:#f2f2f2;border:1px dashed #999;border-radius:6px;color:#666;font-size:17px;">📷 이미지 제안: 동탄 지식산업센터 분양 임대 사무실 내부</div>
+<figure style="margin:20px 0;text-align:center;"><img src="https://images.unsplash.com/photo-1670589953882-b94c9cb380f5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDE3NDU0fDB8MXxzZWFyY2h8MXx8bW9kZXJuJTIwcmVzaWRlbnRpYWwlMjBidWlsZGluZyUyMGV4dGVyaW9yfGVufDB8MHx8fDE3ODc4OTcwMDJ8MA&ixlib=rb-4.1.0&q=80&w=1080" width="430" style="width:430px;max-width:100%;border-radius:8px;" alt="동탄지식산업센터 인근 신축 건물 외관"><figcaption style="font-size:14px;color:#aaa;margin-top:6px;">사진: Unsplash / Salman Saqib</figcaption></figure>
 
-<p style="line-height:1.8;color:#222;font-size:21px;">동탄 분양 임대수익률을 내 물건 숫자로 바로 확인하고 싶다면 아래 계산기에 넣어보실 수 있도록 만들어 두었습니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;"><a href="https://jay70park-cyber.github.io/jisik-calc/">실투자금 계산기에서 내 숫자로 확인하기</a></p>
-<p style="line-height:1.8;color:#222;font-size:21px;">계산기 결과는 참고용이며 실제 대출 조건과 옵션 비용은 현장마다 다를 수 있습니다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">착공 단계로 넘어간 호재는 분양가에 이미 반영되기 시작한다. 문제는 그 반영분이 준공 매물의 실거래가보다 얼마나 더 붙어 있느냐다.</strong></p>
+<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">무엇이 근거인가: 동탄지식산업센터 분양 vs 준공 선택표</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;">같은 예산이라도 신규 분양과 준공 매물은 임대수익 구조가 다르다. 아래 표에 자기 조건을 대입해보자.</p>
+<table align="center" style="border-collapse:collapse;width:100%;font-size:18px;">
+<thead>
+<tr>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">항목</th>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">신규 분양(분양권)</th>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">인근 준공 매물</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">초기 임대료 확정 시점</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">입주 후 6개월~1년 뒤 확정</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">지금 임대 시세로 즉시 확인</td>
+</tr>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">공실 기간</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">입주 초기 6개월~1년 감안 필요</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">현재 공실률로 실측 가능</td>
+</tr>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">가격 결정 근거</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">분양가 + 개발 호재 프리미엄</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">최근 실거래가 (시장 평가 완료)</td>
+</tr>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">확인 서류</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">시청 고시·실시계획 인가 공고문</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">등기부등본, 관리비 내역, 임대차계약서</td>
+</tr>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">유리한 상황</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">호재가 착공·인가 단계일 때</td>
+<td style="border:1px solid #ddd;padding:10px 12px;">호재가 구상·검토 단계일 때</td>
+</tr>
+</tbody>
+</table>
+<p style="line-height:1.8;color:#222;font-size:21px;">이 표에서 가장 먼저 채워야 할 칸은 "가격 결정 근거"다. 국토교통부 실거래가 공개시스템(직접 집계) 기준으로 동탄지식산업센터 226건의 평당가(건물면적 기준) 중앙값은 2,406만원(2025.01~2026.08 집계)이다. 신규 분양가가 이보다 얼마나 높은지부터 계산해보면 표의 나머지 칸을 채울 순서가 정해진다.</p>
 <div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">그래서 어떤 의미인가: 판단 기준 3가지</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
-<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">1. 분양 공고문의 분양가에 건물분 부가세(통상 10%)가 별도 항목으로 표기되어 있는가</strong><br />
-부가세 별도 표기가 없으면 계약 후에야 추가 납부 금액을 알게 됩니다. 계약서에 '건물분 부가세 별도'라는 문구가 있으면 매수인이 부가세를 부담하고, 매도인은 세금계산서만 발행하면 됩니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">2. 발코니 확장비·시스템에어컨 등 옵션 비용이 기본 분양가에 포함되지 않고 추가 청구되는가</strong><br />
-분양가만 보고 실투자금을 산정하면 옵션비만큼 자기자본이 부족해지는 상황이 뒤늦게 발생합니다. 위 예시에서는 옵션비 900만 원이 총 투입비용에 그대로 더해졌습니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">3. 중도금 대출 이자(무이자 여부)와 관리비 예치금이 총 투입 비용 계산에서 누락되어 있는가</strong><br />
-관리비 예치금(입주 전 미리 내는 관리비 선납금으로 통상 2~3개월 치 관리비 수준)은 시행사가 계약 시 고지하지만 분양가 본문에는 포함되지 않는 경우가 많습니다. 위 계산 예시에서는 300만 원이 관리비 예치금으로 반영돼 실투자금을 그만큼 늘렸습니다.<br />
-"중도금 무이자" 조건이 붙은 현장도 있지만 전 구간이 아니라 일부 회차만 무이자인 경우가 있습니다. 계약서의 회차별 상환 스케줄표에서 무이자·유이자 구간을 직접 대조합니다.</p>
-<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">동탄 분양시장은 지금 어떤가</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
-<p style="line-height:1.8;color:#222;font-size:21px;">국토교통부 실거래가 공개시스템을 직접 집계한 결과, 2025년 1월~2026년 8월 동탄구 지식산업센터(지산) 195건의 평당가 중앙값은 2,406만 원이었고 범위는 888만~6,346만 원으로 넓게 분포했습니다(건물면적 기준). 같은 기간 테크노밸리 블록 226건의 중앙값도 2,406만 원으로 지산 전체 중앙값과 거의 같았고, 디에트르 퍼스트지 한 단지에서만 155건이 거래돼 전체 지산 거래의 상당 부분을 차지했습니다.</p>
-<p style="line-height:1.8;color:#222;font-size:21px;">교통 인프라는 확정 구간과 계획 구간이 나뉩니다. '24년 3월 30일 수서∼동탄 구간이 첫 운행을 시작했고, '24년 12월 28일 운정중앙∼서울역 구간이 순차 개통해 현재 파주~동탄 전 구간이 운행 중입니다.</p>
-<div style="padding:12px 16px;background:#f4f6fa;border-left:5px solid #C9932F;border-radius:6px;color:#555;font-size:17px;line-height:1.65;">
-<p style="line-height:1.8;color:#222;font-size:21px;">근거: 경기도청 「GTX-A 수서∼동탄 1주년, 누적 410만명 이용」 (https://gits.gg.go.kr/web/newboard/3386.do?mode=view&amp;idx=196674625)</p>
-</div>
-<p style="line-height:1.8;color:#222;font-size:21px;">삼성역은 2026년에는 무정차 통과가 계획된 단계로, 정식 정차는 아직 확정 개통이 아닙니다.</p>
-<div style="padding:12px 16px;background:#f4f6fa;border-left:5px solid #C9932F;border-radius:6px;color:#555;font-size:17px;line-height:1.65;">
-<p style="line-height:1.8;color:#222;font-size:21px;">근거: 대한민국 정책브리핑 「GTX-A로 경험해 본 속도와 광역 연결의 시작」 (https://www.korea.kr/news/reporterView.do?newsId=148955530)</p>
-</div>
-<p style="line-height:1.8;color:#222;font-size:21px;">확정 구간(수서~동탄, 운정~서울역)과 계획 구간(삼성역)을 나눠서 봐야 임대 수요 판단이 흔들리지 않습니다.</p>
-<div style="margin:16px 0;padding:14px 16px;background:#f2f2f2;border:1px dashed #999;border-radius:6px;color:#666;font-size:17px;">📷 이미지 제안: 동탄 테크노밸리 전경과 GTX 동탄역</div>
-
-<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">어떻게 대응할 것인가</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">1. 개발 호재가 착공·인가 단계인지, 구상 단계인지 공고문으로 확인했는가</strong><br />
+분양 홍보 문구의 "트램 예정"은 착공과 다르다. 화성시청 고시나 국토교통부 승인 공고문에서 "실시계획 인가", "착공 신고" 문구가 실제로 있는지 검색해 확인하는 것이 순서다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">2. 신규 분양가와 반경 1km 내 최근 실거래가 차이가 임대료 상승분으로 회수되는가</strong><br />
+그 차액(프리미엄)을 연 임대료 상승 예상액으로 나누면 회수 연차가 나온다. 숫자로 뽑아보지 않으면 "호재가 있다"는 말만으로는 분양가의 적정성을 판단할 수 없다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;"><strong style="color:#B8451D;font-weight:700;">3. 신규 분양의 공실 기간과 준공 매물의 현재 가동률을 같은 기준으로 비교했는가</strong><br />
+매도인에게 "최근 1년 공실 기간이 총 며칠이었는지"를 물어보고, 계약서·관리비 납부 내역으로 대조한다. 이 숫자가 없으면 준공 매물 쪽 판단도 아직 이르다.</p>
+<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">어떻게 대응할 것인가: 내 경우 계산해보기</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;">전용 30평, 분양가 3.5억원, 보증금 3천만원·월세 150만원, 대출 60%(금리 5%)를 가정하면 다음과 같다.</p>
 <ul>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">분양 상담 시 물어볼 문장: "이 수익률은 부가세·옵션비·관리비 예치금·대출이자를 포함한 실투자금 기준인가요?"</li>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">계약서에서 확인할 조항: '건물분 부가세 별도' 문구, 옵션 품목별 견적서 첨부 여부, 관리비 예치금 고지 금액</li>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">국세청 홈택스에서 확인할 것: 세금신고 &gt; 부가가치세 신고 &gt; 조기환급신고 화면에서 설비투자 조기환급 요건 해당 여부</li>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">국토교통부 실거래가 공개시스템(rt.molit.go.kr)에서 확인할 것: 같은 블록·같은 면적대 지식산업센터의 최근 6개월 거래가</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">대출금 2.1억원 → 월 이자 약 87.5만원</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">실투자금 = 자기자본 1.4억 − 보증금 3천만 = 1.1억원</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">연 순수익 = (150만 − 87.5만) × 12 = 750만원</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">연수익률 ≈ 6.8%</li>
 </ul>
+<p style="line-height:1.8;color:#222;font-size:21px;">이 계산에 입주 초기 공실 6개월치 임대료 손실(약 900만원)을 반영하면 첫해 수익률은 3%대로 낮아진다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;">직접 숫자를 넣어보실 수 있도록 계산기를 만들어 두었습니다 → <a href="https://jay70park-cyber.github.io/jisik-calc/">임대수익률 계산기에서 내 숫자로 확인하기</a></p>
+<p style="line-height:1.8;color:#222;font-size:21px;">계산기 결과는 참고용이며, 실제 대출 조건과 관리비, 공실 기간에 따라 수익률은 달라진다.</p>
+<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">동탄지식산업센터 시세는 어떤가</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;">동탄구 상업업무용 부동산 실거래 686건(2025.01~2026.08, 국토교통부 실거래가 공개시스템 직접 집계) 중 지식산업센터는 226건, 오피스텔은 23건이다. 지식산업센터 평당가(건물면적 기준) 중앙값은 2,406만원, 오피스텔은 1,396만원이다. 이 수치는 전용면적이 아닌 건물면적(계약면적) 기준이라는 점을 감안해야 한다.</p>
+<table align="center" style="border-collapse:collapse;width:100%;font-size:18px;">
+<thead>
+<tr>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;">단지</th>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;text-align: right;">거래건수</th>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;text-align: right;">평당가 중앙값(만원)</th>
+<th style="border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;text-align: right;">최근 거래월</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">디에트르 퍼스트지</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">155</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">2,406</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">2025.04</td>
+</tr>
+<tr>
+<td style="border:1px solid #ddd;padding:10px 12px;">동탄SK V1 Center</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">13</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">2,641</td>
+<td style="border:1px solid #ddd;padding:10px 12px;text-align: right;">2026.04</td>
+</tr>
+</tbody>
+</table>
+<p style="line-height:1.8;color:#222;font-size:21px;">두 단지의 가격 차이가 실제 임대료 차이로 이어지는지는 각 단지 임대차 시세를 따로 확인해야 한다.</p>
+<p style="line-height:1.8;color:#222;font-size:21px;"><mark style="background:#fff176;padding:1px 3px;border-radius:2px;">[평당 분양가 확인 필요]</mark></p>
+<figure style="margin:20px 0;text-align:center;"><img src="https://images.unsplash.com/photo-1586528321409-9c7853d54ff1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDE3NDU0fDB8MXxzZWFyY2h8MXx8aW5kdXN0cmlhbCUyMHBhcmslMjBidWlsZGluZ3N8ZW58MHwwfHx8MTc4Nzg5NzAwMnww&ixlib=rb-4.1.0&q=80&w=1080" width="430" style="width:430px;max-width:100%;border-radius:8px;" alt="동탄지식산업센터 산업단지 상업용 건물 전경"><figcaption style="font-size:14px;color:#aaa;margin-top:6px;">사진: Unsplash / Adrian Sulyok</figcaption></figure>
+
 <div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">이 판단이 틀릴 수 있는 경우</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
 <ul>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">부가세 조기환급 소요기간은 15~20일이지만, 세금계산서를 언제 받느냐에 따라 신고 시점이 달라집니다. 세금계산서 수취일 기준으로 국세청 홈택스 '조기환급신고' 메뉴에서 예상 환급일을 직접 조회합니다.</li>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">대출금리 5%는 예시일 뿐이며 실제 금리는 은행·신용도별로 다릅니다. 계약 전 최소 2곳 이상 은행에서 지식산업센터 담보대출 금리를 비교 견적받습니다.</li>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;">평당가 중앙값 2,406만 원은 디에트르 퍼스트지 거래 155건이 전체 195건 중 상당 부분을 차지한 결과입니다. 다른 단지는 국토교통부 실거래가 공개시스템에서 단지명으로 따로 조회합니다.</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">트램 노선이 정거장 도보권으로 확정되는 시점에 프리미엄이 한 번에 반영될 수 있다. 이 경우 미리 매입한 신규 분양이 유리해진다.</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">준공 매물이라도 매도인이 공실률 데이터를 제공하지 않거나 최근 계약이 없으면, 이 표의 우측 칸 장점은 성립하지 않는다.</li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;">이 글의 실거래 데이터는 2026년 8월 25일 기준 집계이며, 거래 건수 10건 미만 단지(교육연구·숙박·기타 유형)는 참고치로만 봐야 한다.</li>
 </ul>
 <div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">더 읽어보기</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
 <ul>
-<li style="line-height:1.8;margin:4px 0;font-size:21px;"><a href="https://blog.naver.com/jay70park/223456789">동탄 지식산업센터 임대수익 완전정리 – 공실률과 관리비까지</a></li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;"><a href="https://mcmlxxiv.tistory.com/1142">동탄 지식산업센터 공실률 현황과 임대 시세 조회 방법</a></li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;"><a href="https://parkemtion.tistory.com/365">동탄2신도시 트램(동탄도시철도) 착공 현황 총정리</a></li>
+<li style="line-height:1.8;margin:4px 0;font-size:21px;"><a href="https://ceoparkjh.tistory.com/1071">동탄 오피스텔 임대수익률 계산 시 확인해야 할 서류 체크리스트</a></li>
 </ul>
-<h1 style="font-size:29px;line-height:1.4;color:#1F3C88;font-weight:800;padding:0;">동탄지식산업센터 #동탄지식산업센터임대 #동탄사무실임대 #동탄공장 #지식산업센터투자 #동탄부동산 #동탄테크노밸리</h1><table align="center" style="border-collapse:collapse;width:100%;table-layout:fixed;"><colgroup><col style="width:40%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup><thead><tr><th width="40%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;width:40%;">키워드</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">블로그 건수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">카페 건수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">검색트렌드지수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">관심도스코어</th></tr></thead><tbody><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 서울</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,325,238</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;2,007,429</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;60.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.67</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 신도시</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;853,434</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;5,480,357</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;40.64</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.60</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 부동산</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;675,362</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,515,698</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;60.58</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.51</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 임장</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;31,271</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;25,771</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;100.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.51</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 분양</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;510,172</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;2,228,008</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;57.24</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.48</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 집값</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;91,499</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;166,935</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;42.96</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.24</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 반도체</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;122,298</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;236,087</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;33.33</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.20</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 고려대학교 병원</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;10,913</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;3,034</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 성과급</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;9,788</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;3,350</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td></tr></tbody></table>
+<div style="height:22px;line-height:22px;font-size:1px;">&nbsp;</div><div style="background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;">이 주제를 고른 이유</div><div style="height:10px;line-height:10px;font-size:1px;">&nbsp;</div>
+<p style="line-height:1.8;color:#222;font-size:21px;">트램이 실제로 착공 궤도에 오른 지금이야말로 "호재가 확정됐는지"와 "그 프리미엄이 회수 가능한지"를 같은 기준으로 따져볼 시점이라 판단해 이 표를 정리했다. 동탄 부동산 시장에서 분양과 준공 매물을 오가는 문의가 늘어난 것도 이 시점과 무관하지 않다.</p>
+<h1 style="font-size:29px;line-height:1.4;color:#1F3C88;font-weight:800;padding:0;">동탄지식산업센터 #동탄지식산업센터임대 #동탄사무실임대 #동탄공장 #지식산업센터투자 #동탄부동산 #동탄테크노밸리</h1><table align="center" style="border-collapse:collapse;width:100%;table-layout:fixed;"><colgroup><col style="width:40%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"></colgroup><thead><tr><th width="40%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;width:40%;">키워드</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">블로그 건수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">카페 건수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">검색트렌드지수</th><th width="15%" style="border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;text-align:right;width:15%;">관심도스코어</th></tr></thead><tbody><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 신도시</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;854,413</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;5,481,525</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;85.71</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.82</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 동탄역</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,222,807</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,057,789</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;100.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.81</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 서울</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,326,484</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;2,008,680</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;60.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.67</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 부동산</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;676,411</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;1,516,260</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;81.89</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.62</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 분양</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;510,902</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;2,228,516</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;72.84</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.56</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 임장</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;31,329</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;25,799</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;100.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.51</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 집값</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;91,753</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;167,031</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;71.85</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.39</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 반도체</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;122,655</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;236,161</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;33.33</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.20</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 고려대학교 병원</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;10,922</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;3,038</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td></tr><tr><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;">동탄 성과급</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;9,837</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;3,358</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td><td style="border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;text-align:right;">&nbsp;0.00</td></tr></tbody></table>
 </body>
 </html>
