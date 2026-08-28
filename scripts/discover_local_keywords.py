@@ -29,6 +29,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 DATA_DIR = "data"
 KEYWORD_FILE = os.path.join(DATA_DIR, "local_keywords.json")
+HEADLINE_FILE = os.path.join(DATA_DIR, "local_headlines.json")
 
 # 뉴스를 긁어올 씨앗 질의.
 # "동탄 개발" 처럼 넓게 잡으면 지역 생활·연예 기사가 대량으로 딸려온다.
@@ -326,7 +327,17 @@ def main():
     if not titles:
         print("기사를 못 가져왔습니다. 기존 목록을 유지합니다.")
         return
-
+    # 수집한 제목은 버리지 않고 저장한다.
+    # 지역 트랙 초안을 쓸 때 그 주 실제 이슈를 알려주는 재료가 된다.
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(HEADLINE_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "updated": today.isoformat(),
+            "period": "최근 {}일".format(RECENT_DAYS),
+            "headlines": titles[:60],
+        }, f, ensure_ascii=False, indent=2)
+    print("기사 제목 저장: {}건".format(len(titles[:60])))
+  
     # ── 2. 빈출어 추출 ────────────────────────
     freq = {}
     for t in titles:
