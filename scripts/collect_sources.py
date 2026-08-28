@@ -136,6 +136,7 @@ def next_rotation_index():
     return idx
     
 def pick_track(today=None):
+    return "realprice", "실거래분석", "실거래가 분석", REALPRICE_KEYWORDS, 1
     """오늘 날짜로 (트랙, 카테고리키, 표시명, 키워드목록, 인덱스)을 결정한다.
     GitHub 러너는 UTC로 돌므로 반드시 KST로 변환해서 요일을 판단한다.
 
