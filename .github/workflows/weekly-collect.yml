@@ -71,10 +71,11 @@ jobs:
           python3 scripts/collect_sources.py
 
       - name: Send collection summary to Telegram
+        continue-on-error: true
         if: steps.guard.outputs.should_run == 'true'
         run: |
           MESSAGE=$(cat telegram_message.txt)
-          curl -sS --connect-timeout 10 --max-time 20 -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=$MESSAGE"
+          curl -sS --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 5 -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=$MESSAGE"
 
       - name: Create plan and wait for feedback (5 min)
         if: steps.guard.outputs.should_run == 'true'
