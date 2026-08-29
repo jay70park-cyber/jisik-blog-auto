@@ -131,10 +131,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     rules = build_rules(category)
     
     reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
-
-    # 우리 실거래 데이터는 매매만 있다. 임차인 독자에게는 재료가 되지 못하고,
-    # 오히려 임대차 판단과 무관한 매매 평당가로 섹션이 채워지는 부작용이 있다.
-    if "임차" in reader:
+    
+    # 실거래 트랙은 데이터가 주인공이므로 독자와 무관하게 항상 넘긴다.
+    # 그 외 트랙에서만 임차인 독자에게 매매 데이터를 빼준다.
+    if "임차" in reader and category != "realprice":
         realprice = ""
         print("임차인 독자 - 매매 실거래 데이터는 넘기지 않습니다.")
     else:
@@ -198,6 +198,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 위 실거래 데이터를 표로 정리하세요. 유형별 또는 블록별 중 이번 주제에 맞는 것을 고르세요.
    - 표에 없는 숫자를 본문에서 지어내지 마세요.
    - 표 아래에 이 표를 어떻게 읽어야 하는지 두세 문장으로 안내하세요.
+   - 위 실거래 데이터를 표로 정리하세요. 유형별 또는 블록별 중 이번 주제에 맞는 것을 고르세요.
+   - 표에 없는 숫자를 본문에서 지어내지 마세요.
 
 4. ## 눈에 띄는 것
    - 특이값 2~3개를 골라 왜 그런지 따져보세요.
