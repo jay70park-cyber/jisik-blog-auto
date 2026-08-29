@@ -28,7 +28,7 @@ SERVICE_KEY = os.environ["MOLIT_API_KEY"]
 REGIONS = {
     "41597": "화성시 동탄구",
     "41590": "화성시(동탄구 외)",
-    "41460": "용인시 기흥구",
+    "41463": "용인시 기흥구",
 }
 
 BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade"
