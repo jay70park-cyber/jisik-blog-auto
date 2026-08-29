@@ -29,8 +29,13 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 MODEL = "claude-sonnet-5"
 
 
-def fetch_reference_links(keyword, count=3, timeout=15):
-    """대표 키워드로 실제 네이버 블로그 글 몇 개를 검색해 제목+링크만 가져온다."""
+def fetch_reference_links(keyword, count=6, timeout=15):
+    """대표 키워드로 네이버 블로그를 검색해 제목+링크를 가져온다.
+
+    검색어가 넓으면 무관한 글이 딸려온다("인천 세차장 매매" 같은 것).
+    제목에 지역·주제 낱말이 없으면 버린다. 남는 게 없으면 빈 목록을 돌려주고,
+    호출하는 쪽에서 '더 읽어보기' 섹션 자체를 생략한다.
+    """
     url = "https://naverapihub.apigw.ntruss.com/search/v1/blog?" + urllib.parse.urlencode(
         {"query": keyword, "display": count, "sort": "sim"}
     )
@@ -44,16 +49,26 @@ def fetch_reference_links(keyword, count=3, timeout=15):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             data = json.load(res)
-        items = data.get("items", [])
-        refs = []
-        for it in items:
-            title = it.get("title", "").replace("<b>", "").replace("</b>", "")
-            link = it.get("link", "")
-            refs.append({"title": title, "link": link})
-        return refs
     except Exception as e:
         print("참고 링크 검색 오류: " + str(e))
         return []
+
+    # 제목에 이 중 하나라도 있어야 관련 글로 인정한다
+    must_have = ["동탄", "지식산업센터", "지산", "화성"]
+
+    refs = []
+    dropped = 0
+    for it in data.get("items", []):
+        title = it.get("title", "").replace("<b>", "").replace("</b>", "")
+        title = title.replace("&amp;", "&").replace("&quot;", '"').strip()
+        link = it.get("link", "")
+        if not any(w in title for w in must_have):
+            dropped += 1
+            continue
+        refs.append({"title": title, "link": link})
+
+    print("참고 링크: {}건 채택, {}건 제외".format(len(refs), dropped))
+    return refs[:3]
 
 
 def call_claude_with_search(prompt, timeout=480):
@@ -140,7 +155,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     else:
         realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
-    refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(참고 자료 없음)"
+    refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
+    refs_rule = ("위에 제공된 네이버 블로그 참고 링크만 제목과 함께 나열하세요."
+                 if refs else
+                 "**참고 링크가 없으므로 이 섹션을 통째로 생략하세요.** 없는 링크를 지어내지 마세요.")
     kw = result["top_keyword"]
 
     output_type = plan.get("output_type", "② 합격/불합격 기준")
@@ -223,7 +241,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 독자가 우리 숫자를 검증할 수 있게 하는 것이 목적입니다.
 
 8. ## 더 읽어보기
-   - 위에 제공된 네이버 블로그 참고 링크만 제목과 함께 나열하세요.
+   - {refs_rule}
 
 9. ## 이 데이터에 대하여
    - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
@@ -263,7 +281,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 이 섹션은 신뢰를 만드는 부분이니 형식적으로 쓰지 마세요.
 
 9. ## 더 읽어보기
-   - 위에 제공된 네이버 블로그 참고 링크만 제목과 함께 나열하세요.
+   - {refs_rule}
 
 10. ## 이 주제를 고른 이유
    - 이 주제를 다루게 된 배경을 2~3문장으로 짧게 씁니다. (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙입니다. 표를 직접 만들지 마세요.)"""
