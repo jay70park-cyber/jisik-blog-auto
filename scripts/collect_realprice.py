@@ -22,8 +22,14 @@ from collections import defaultdict
 
 SERVICE_KEY = os.environ["MOLIT_API_KEY"]
 
-# 화성시 동탄구. 2026년 분구로 신설된 코드이며, 이전 데이터는 화성시(41590)에 남아 있다.
-LAWD_CD = "41597"
+# 수집 대상 지역.
+# 동탄만 보면 "동탄이 비싼가 싼가"에 답할 수 없어 인접 지역을 함께 모은다.
+# 41597은 2026년 분구로 신설된 코드이며, 그 이전 동탄 거래는 화성시(41590)에 남아 있다.
+REGIONS = {
+    "41597": "화성시 동탄구",
+    "41590": "화성시(동탄구 외)",
+    "41460": "용인시 기흥구",
+}
 
 BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade"
 
@@ -36,6 +42,7 @@ MONTHS_BACK = int(os.environ.get("MONTHS_BACK", "20"))
 MODE = os.environ.get("COLLECT_MODE", "backfill")  # backfill | incremental
 
 FIELDS = [
+    "sggCd", "sggNm",
     "dealYear", "dealMonth", "dealDay",
     "umdNm", "jibun", "buildingUse", "buildingType",
     "buildingAr", "floor", "dealAmount", "buildYear",
@@ -58,16 +65,16 @@ def month_list(months_back, until=None):
     return list(reversed(out))
 
 
-def fetch_month(ym, timeout=30, retries=3):
+def fetch_month(lawd_cd, ym, timeout=30, retries=3):
     """한 달치 거래를 조회해 dict 목록으로 돌려준다."""
     url = BASE_URL + "?" + urllib.parse.urlencode({
         "serviceKey": SERVICE_KEY,
-        "LAWD_CD": LAWD_CD,
+        "LAWD_CD": lawd_cd,
         "DEAL_YMD": ym,
         "numOfRows": 1000,
         "pageNo": 1,
     }, safe="%")
-
+  
     for attempt in range(1, retries + 1):
         try:
             req = urllib.request.Request(url)
@@ -103,6 +110,7 @@ def fetch_month(ym, timeout=30, retries=3):
 def deal_key(r):
     """같은 거래를 식별하는 키. 재수집 시 중복을 막는다."""
     return "|".join([
+        r.get("sggCd", ""),
         r["dealYear"], r["dealMonth"], r["dealDay"],
         r["umdNm"], r["jibun"], r["floor"],
         r["buildingAr"], r["dealAmount"],
@@ -231,17 +239,19 @@ def main():
     print("기존 누적: {}건".format(len(records)))
 
     added = 0
-    for ym in months:
-        rows = fetch_month(ym)
-        new = 0
-        for r in rows:
-            k = deal_key(r)
-            if k not in records:
-                new += 1
-            records[k] = r
-        added += new
-        print("  {} : {}건 조회 (신규 {}건)".format(ym, len(rows), new))
-        time.sleep(0.4)   # API 부담 완화
+    for lawd_cd, region_name in REGIONS.items():
+        print("── {} ({}) ──".format(region_name, lawd_cd))
+        for ym in months:
+            rows = fetch_month(lawd_cd, ym)
+            new = 0
+            for r in rows:
+                k = deal_key(r)
+                if k not in records:
+                    new += 1
+                records[k] = r
+            added += new
+            print("  {} : {}건 조회 (신규 {}건)".format(ym, len(rows), new))
+            time.sleep(0.4)
 
     print("신규 추가: {}건 / 누적 {}건".format(added, len(records)))
 
