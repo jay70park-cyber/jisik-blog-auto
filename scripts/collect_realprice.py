@@ -65,7 +65,7 @@ def month_list(months_back, until=None):
     return list(reversed(out))
 
 
-def fetch_month(lawd_cd, ym, timeout=30, retries=3):
+def fetch_month(lawd_cd, ym, timeout=15, retries=2):
     """한 달치 거래를 조회해 dict 목록으로 돌려준다."""
     url = BASE_URL + "?" + urllib.parse.urlencode({
         "serviceKey": SERVICE_KEY,
@@ -253,7 +253,11 @@ def main():
             added += new
             print("  {} : {}건 조회 (신규 {}건)".format(ym, len(rows), new))
             time.sleep(0.4)
-
+        # 지역 하나가 끝날 때마다 저장한다.
+        # 도중에 타임아웃으로 취소돼도 여기까지는 남는다.
+        if records:
+            write_raw(records)
+            print("  [중간 저장] 누적 {}건".format(len(records)))    
     print("신규 추가: {}건 / 누적 {}건".format(added, len(records)))
 
     if not records:
