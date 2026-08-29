@@ -1,83 +1,34 @@
 {
-  "week_index": 4,
-  "track": "local",
-  "category": "지역이슈",
-  "category_display": "동탄 지역 개발 이슈",
+  "week_index": 1,
+  "track": "realprice",
+  "category": "실거래분석",
+  "category_display": "실거래가 분석",
   "period": {
-    "start": "2026-07-31",
-    "end": "2026-08-28"
+    "start": "2026-08-01",
+    "end": "2026-08-29"
   },
   "rows": [
     {
-      "keyword": "동탄 신도시",
-      "blog": 854413,
-      "cafe": 5481525,
-      "trend": 85.71428,
-      "score": 0.822
+      "keyword": "동탄 지식산업센터 매매",
+      "blog": 34367,
+      "cafe": 321415,
+      "trend": 35.71428,
+      "score": 0.883
     },
     {
-      "keyword": "동탄 동탄역",
-      "blog": 1222807,
-      "cafe": 1057789,
-      "trend": 100.0,
-      "score": 0.815
-    },
-    {
-      "keyword": "동탄 서울",
-      "blog": 1326484,
-      "cafe": 2008680,
-      "trend": 60.0,
-      "score": 0.673
-    },
-    {
-      "keyword": "동탄 부동산",
-      "blog": 676411,
-      "cafe": 1516260,
-      "trend": 81.89102,
-      "score": 0.618
-    },
-    {
-      "keyword": "동탄 분양",
-      "blog": 510902,
-      "cafe": 2228516,
-      "trend": 72.84122,
-      "score": 0.561
-    },
-    {
-      "keyword": "동탄 임장",
-      "blog": 31329,
-      "cafe": 25799,
-      "trend": 100.0,
-      "score": 0.508
-    },
-    {
-      "keyword": "동탄 집값",
-      "blog": 91753,
-      "cafe": 167031,
-      "trend": 71.85185,
-      "score": 0.386
-    },
-    {
-      "keyword": "동탄 반도체",
-      "blog": 122655,
-      "cafe": 236161,
-      "trend": 33.33333,
-      "score": 0.203
-    },
-    {
-      "keyword": "동탄 고려대학교 병원",
-      "blog": 10922,
-      "cafe": 3038,
+      "keyword": "동탄 상가 시세",
+      "blog": 56262,
+      "cafe": 232449,
       "trend": 0.0,
-      "score": 0.003
+      "score": 0.445
     },
     {
-      "keyword": "동탄 성과급",
-      "blog": 9837,
-      "cafe": 3358,
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 16834,
+      "cafe": 211897,
       "trend": 0.0,
-      "score": 0.002
+      "score": 0.222
     }
   ],
-  "top_keyword": "동탄 분양"
+  "top_keyword": "동탄 지식산업센터 매매"
 }
