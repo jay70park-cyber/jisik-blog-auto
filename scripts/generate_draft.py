@@ -130,7 +130,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
     
-       reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
+    reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
 
     # 우리 실거래 데이터는 매매만 있다. 임차인 독자에게는 재료가 되지 못하고,
     # 오히려 임대차 판단과 무관한 매매 평당가로 섹션이 채워지는 부작용이 있다.
