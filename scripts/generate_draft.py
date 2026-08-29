@@ -56,7 +56,7 @@ def fetch_reference_links(keyword, count=3, timeout=15):
         return []
 
 
-def call_claude_with_search(prompt, timeout=280):
+def call_claude_with_search(prompt, timeout=480):
     """웹 검색 도구를 활성화해 Claude API를 호출한다."""
     url = "https://api.anthropic.com/v1/messages"
     body = json.dumps(
