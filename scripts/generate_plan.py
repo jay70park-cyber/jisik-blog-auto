@@ -165,12 +165,23 @@ def format_history(plans):
 def build_plan_prompt(result, feedback=None, previous=None):
     kw = result["top_keyword"]
     cat = result["category_display"]
+    track = result.get("track", "jisik")
+    track_note = ""
+    if track == "realprice":
+        track_note = """
+[이번 글은 실거래가 분석 트랙입니다]
+- 우리가 가진 실거래 데이터는 매매 신고 자료뿐입니다. 임대차 자료는 없습니다.
+- 따라서 독자로 "실사용 임차인"을 고르지 마세요. 재료가 없어 글이 부실해집니다.
+- "임대수익 목적 투자자" 또는 "실사용 매수자" 중에서 고르세요.
+- 산출물은 판단 도구보다 현황 파악에 가깝습니다. ① 계산 공식 또는 ③ A vs B 선택표가 잘 맞습니다.
+"""
     history = format_history(load_history()) 
     base = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 기획을 돕습니다.
 
 이번 글의 카테고리는 "{cat}", 검색 관심도 1위 키워드는 "{kw}" 입니다.
 
 {history}
+{track_note}
 이 키워드로 글을 쓰기 전에 기획안을 먼저 만드세요. 원칙은 아래와 같습니다.
 
 1. 독자는 반드시 한 명만 고릅니다. 후보: {", ".join(READERS)}
