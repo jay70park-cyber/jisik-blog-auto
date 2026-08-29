@@ -171,10 +171,10 @@ def write_summary(records):
     지산 후보를 위에 오도록 정렬한다 (집합+업무, 거래 많은 순)."""
     groups = defaultdict(list)
     for r in records.values():
-        groups[(r["umdNm"], r["jibun"])].append(r)
+        groups[(r.get("sggNm", ""), r["umdNm"], r["jibun"])].append(r)
 
     rows = []
-    for (umd, jibun), items in groups.items():
+    for (sgg, umd, jibun), items in groups.items():
         uses = defaultdict(int)
         types = defaultdict(int)
         areas, floors, prices = [], [], []
@@ -201,6 +201,7 @@ def write_summary(records):
         )
 
         rows.append({
+            "시군구": sgg,
             "법정동": umd,
             "지번": jibun,
             "거래건수": len(items),
