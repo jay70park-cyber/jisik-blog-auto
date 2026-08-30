@@ -1,34 +1,34 @@
 {
-  "week_index": 1,
-  "track": "realprice",
-  "category": "실거래분석",
-  "category_display": "실거래가 분석",
+  "week_index": 2,
+  "track": "jisik",
+  "category": "물건_검증",
+  "category_display": "물건 검증",
   "period": {
-    "start": "2026-08-01",
-    "end": "2026-08-29"
+    "start": "2026-08-02",
+    "end": "2026-08-30"
   },
   "rows": [
     {
-      "keyword": "동탄 지식산업센터 매매",
-      "blog": 34370,
-      "cafe": 321415,
-      "trend": 35.71428,
-      "score": 0.883
+      "keyword": "지식산업센터 등기부 확인",
+      "blog": 38901,
+      "cafe": 88136,
+      "trend": 0.0,
+      "score": 0.389
     },
     {
-      "keyword": "동탄 상가 시세",
-      "blog": 56267,
-      "cafe": 232451,
+      "keyword": "동탄 지식산업센터 전용률",
+      "blog": 11171,
+      "cafe": 196258,
       "trend": 0.0,
-      "score": 0.445
+      "score": 0.285
     },
     {
-      "keyword": "동탄 지식산업센터 시세",
-      "blog": 16836,
-      "cafe": 211899,
+      "keyword": "동탄 지식산업센터 실거래가",
+      "blog": 4464,
+      "cafe": 197039,
       "trend": 0.0,
-      "score": 0.222
+      "score": 0.234
     }
   ],
-  "top_keyword": "동탄 지식산업센터 매매"
+  "top_keyword": "동탄 지식산업센터 실거래가"
 }
