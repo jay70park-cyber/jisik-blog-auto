@@ -143,8 +143,18 @@ def load_raw(master):
                 r.get("dealYear", ""), to_int(r.get("dealMonth")))
             rows.append(r)
 
-    return rows, unmapped
+            r["_ym"] = "{}-{:02d}".format(
+                r.get("dealYear", ""), to_int(r.get("dealMonth")))
+            rows.append(r)
 
+    # 유형을 '제외'로 표시한 것은 분석 대상이 아니다.
+    # (노인복지주택 등 지산·상가와 시장이 다른 건물)
+    before = len(rows)
+    rows = [r for r in rows if r["유형"] != "제외"]
+    if before != len(rows):
+        print("분석 제외: {}건".format(before - len(rows)))
+
+    return rows, unmapped
 
 def stats(items):
     """거래 목록에서 요약 통계를 뽑는다."""
