@@ -89,14 +89,19 @@ def norm_jibun(s):
 
 
 def load_master():
-    """지번 매핑을 (법정동, 지번) -> dict 로 읽는다."""
+    """지번 매핑을 (시군구, 법정동, 지번) -> dict 로 읽는다.
+    다른 시군구에 같은 법정동명이 있을 수 있어 시군구까지 키에 넣는다."""
     if not os.path.exists(MASTER_FILE):
         print("매핑 파일이 없습니다: " + MASTER_FILE)
         return {}
     out = {}
     with open(MASTER_FILE, "r", encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            key = (r.get("법정동", "").strip(), norm_jibun(r.get("지번", "")))
+            key = (
+                r.get("시군구", "").strip(),
+                r.get("법정동", "").strip(),
+                norm_jibun(r.get("지번", "")),
+            )
             out[key] = {
                 "단지명": r.get("단지명", "").strip(),
                 "유형": r.get("유형확정", "").strip() or "미분류",
@@ -113,9 +118,10 @@ def load_raw(master):
 
     with open(RAW_FILE, "r", encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
+            sgg = r.get("sggNm", "").strip()
             umd = r.get("umdNm", "").strip()
             jibun = norm_jibun(r.get("jibun", ""))
-            m = master.get((umd, jibun))
+            m = master.get((sgg, umd, jibun))
 
             if m:
                 r["단지명"] = m["단지명"]
@@ -123,13 +129,11 @@ def load_raw(master):
                 r["블록"] = m["블록"]
                 r["분류출처"] = "매핑"
             else:
-                # 매핑에 없으면 건물용도로 자동 분류한다.
-                # 지산/오피스는 둘 다 "업무"라 자동으로 못 가르므로 확인 대상으로 남긴다.
-                r["단지명"] = "{} {}".format(umd, jibun)
+                r["단지명"] = "{} {} {}".format(sgg, umd, jibun)
                 r["유형"] = auto_type(r.get("buildingUse", ""))
                 r["블록"] = ""
                 r["분류출처"] = "자동"
-                unmapped[(umd, jibun)] += 1
+                unmapped[(sgg, umd, jibun)] += 1
 
             r["_면적"] = to_float(r.get("buildingAr"))
             r["_금액"] = to_int(r.get("dealAmount"))
@@ -228,8 +232,8 @@ def write_summary(rows, by_type, by_block, by_complex):
         min(r["_ym"] for r in rows), max(r["_ym"] for r in rows))
 
     lines = []
-    lines.append("[동탄구 상업업무용 실거래 요약]")
-    lines.append("기준: 국토교통부 실거래가 공개시스템 / 화성시 동탄구(41597)")
+    lines.append("[동탄·기흥 상업업무용 실거래 요약]")
+    lines.append("기준: 국토교통부 실거래가 공개시스템 / 화성시 동탄구(41597), 용인시 기흥구(41463)")
     lines.append("기간: {} / 전체 {}건".format(period, total))
     lines.append("생성일: " + datetime.date.today().isoformat())
     lines.append("")
@@ -279,19 +283,20 @@ def main():
         need_check = defaultdict(int)
         for r in rows:
             if r["유형"] == "업무(미확인)":
-                need_check[(r["umdNm"].strip(), norm_jibun(r["jibun"]))] += 1
+                need_check[(r["sggNm"].strip(), r["umdNm"].strip(),
+                            norm_jibun(r["jibun"]))] += 1
 
         if need_check:
             print("\n[수동 확인 필요] 업무시설인데 매핑에 없는 지번 "
                   "{}개 (거래 {}건):".format(
                       len(need_check), sum(need_check.values())))
-            for (umd, jb), n in sorted(need_check.items(), key=lambda x: -x[1]):
-                print("   {} {} : {}건".format(umd, jb, n))
+            for (sgg, umd, jb), n in sorted(need_check.items(), key=lambda x: -x[1]):
+                print("   {} {} {} : {}건".format(sgg, umd, jb, n))
 
         top = sorted(unmapped.items(), key=lambda x: -x[1])[:15]
         print("\n[단지명 미입력] 거래 많은 순 상위 15:")
-        for (umd, jb), n in top:
-            print("   {} {} : {}건".format(umd, jb, n))
+        for (sgg, umd, jb), n in top:
+            print("   {} {} {} : {}건".format(sgg, umd, jb, n))
 
     by_complex = write_group(
         rows, lambda r: r["단지명"], "단지명", OUT_COMPLEX,
