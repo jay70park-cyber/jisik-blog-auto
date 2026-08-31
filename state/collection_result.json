@@ -1,34 +1,34 @@
 {
-  "week_index": 2,
-  "track": "jisik",
-  "category": "물건_검증",
-  "category_display": "물건 검증",
+  "week_index": 1,
+  "track": "auction",
+  "category": "경매취득",
+  "category_display": "경매 취득",
   "period": {
-    "start": "2026-08-02",
-    "end": "2026-08-30"
+    "start": "2026-08-03",
+    "end": "2026-08-31"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 등기부 확인",
-      "blog": 38901,
-      "cafe": 88136,
-      "trend": 0.0,
-      "score": 0.389
+      "keyword": "지식산업센터 경매",
+      "blog": 113635,
+      "cafe": 88647,
+      "trend": 100.0,
+      "score": 0.743
     },
     {
-      "keyword": "동탄 지식산업센터 전용률",
-      "blog": 11171,
-      "cafe": 196258,
+      "keyword": "상가 경매 권리분석",
+      "blog": 787653,
+      "cafe": 69608,
       "trend": 0.0,
-      "score": 0.285
+      "score": 0.457
     },
     {
-      "keyword": "동탄 지식산업센터 실거래가",
-      "blog": 4464,
-      "cafe": 197039,
+      "keyword": "동탄 공장 경매",
+      "blog": 16507,
+      "cafe": 10658,
       "trend": 0.0,
-      "score": 0.234
+      "score": 0.03
     }
   ],
-  "top_keyword": "동탄 지식산업센터 실거래가"
+  "top_keyword": "지식산업센터 경매"
 }
