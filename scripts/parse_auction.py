@@ -2,8 +2,9 @@
 """
 법원경매정보에서 복사한 아파트형공장(지식산업센터) 목록을 CSV로 파싱한다.
 
-법원경매정보에는 검색 결과를 파일로 받는 기능이 없어,
-화면에서 복사한 텍스트를 그대로 붙여넣은 파일을 읽어 구조화한다.
+브라우저에서 복사하면 줄바꿈이 사라져 한 줄로 붙는 경우가 많다.
+그래서 줄 단위가 아니라 텍스트 전체를 정규식으로 훑는다.
+줄바꿈이 있든 없든 같은 결과가 나온다.
 
 입력
   data/auction_raw_*.txt      법원경매정보에서 복사한 원문 (지역별로 여러 개 가능)
@@ -12,18 +13,9 @@
   data/auction_cases.csv      사건별 구조화 데이터
   data/auction_summary.txt    프롬프트·텔레그램에 넣을 요약
 
-한 물건은 아래 형태로 반복된다.
-
-    아파트형공장
-    2025타경54996|수원본원지방법원
-    경기도 화성시 동탄구 영천동 853-1 동탄에스케이브이원센터 제13층 제1308호
-    토지 64.7485㎡ (19.59평)|건물 222.08㎡ (67.18평)
-    감정가1,240,000,000
-    최저가(49%)607,600,000
-    매각가(55%)684,000,000
-    매각(55%)
-    2026-08-28end
-    336
+한 물건은 아래 순서로 이어진다.
+  아파트형공장 / 사건번호|법원 / 소재지 / 면적 / (특이사항) /
+  감정가 / 최저가(N%) / 매각가(N%) / 매각(N%) / 매각기일end / 조회수
 """
 import os
 import re
@@ -39,7 +31,7 @@ OUT_SUMMARY = os.path.join(DATA_DIR, "auction_summary.txt")
 
 # 매각가율 구간. 글에서 "얼마짜리가 몇 건" 식으로 쓸 때 기준이 된다.
 BANDS = [(0, 30, "30% 미만"), (30, 40, "30~40%"), (40, 50, "40~50%"),
-         (50, 70, "50~70%"), (70, 200, "70% 이상")]
+         (50, 70, "50~70%"), (70, 300, "70% 이상")]
 
 # 동탄구 법정동. 2026년 분구 이전 사건은 '화성시 영천동'처럼 구 없이 표기되므로,
 # 이 목록에 해당하면 '화성시 동탄구'로 통일해 실거래 데이터와 축을 맞춘다.
@@ -47,6 +39,11 @@ DONGTAN_DONGS = {
     "영천동", "여울동", "능동", "반송동", "석우동", "송동", "신동",
     "오산동", "청계동", "산척동", "장지동", "목동", "방교동", "중동",
 }
+
+# 목록에 섞여 나오는 다른 용도들. 덩어리를 자르는 기준으로 함께 쓴다.
+CATEGORIES = ["아파트형공장", "근린상가", "오피스텔", "숙박시설", "공장",
+              "창고", "상가", "대지", "임야", "전답", "아파트",
+              "다세대", "연립주택", "단독주택", "기타"]
 
 
 def to_int(s):
@@ -63,102 +60,104 @@ def to_float(s):
         return 0.0
 
 
-def parse_area(line):
-    """'토지 20.7㎡ (6.26평)|건물 54.9㎡ (16.61평)' 에서 면적을 뽑는다.
-    건물면적이 없으면 0을 돌려준다."""
-    land = build = 0.0
-    m = re.search(r"토지\s*([\d.]+)\s*㎡", line)
-    if m:
-        land = to_float(m.group(1))
-    m = re.search(r"건물\s*([\d.]+)\s*㎡", line)
-    if m:
-        build = to_float(m.group(1))
-    return land, build
+def split_records(text):
+    """용도 이름을 기준으로 덩어리를 자르고, 아파트형공장만 돌려준다."""
+    text = re.sub(r"\s*\n\s*", "", text)
+    text = text.replace("자료시작", "").replace("자료끝", "")
+
+    pattern = "|".join(re.escape(c) for c in CATEGORIES)
+    parts = re.split(r"(" + pattern + r")(?=\d{4}타경)", text)
+
+    records = []
+    for i in range(1, len(parts) - 1, 2):
+        if parts[i] == "아파트형공장":
+            records.append(parts[i + 1])
+    return records
 
 
-def parse_address(line):
-    """소재지 줄에서 시군구·법정동·지번·단지명·층호를 분리한다.
-
-    '경기도 화성시 동탄구 영천동 853-1 동탄에스케이브이원센터 제13층 제1308호'
-    분구 전 표기('경기도 화성시 영천동 846-3')도 함께 처리한다.
-    """
+def parse_address(seg):
+    """소재지에서 시군구·법정동·지번·단지명·호실을 분리한다."""
     out = {"시군구": "", "법정동": "", "지번": "", "단지명": "", "호실": ""}
 
-    m = re.search(r"(화성시\s*동탄구|화성시|용인시\s*기흥구|[가-힣]+시\s*[가-힣]+구|[가-힣]+시)", line)
+    m = re.search(r"([가-힣]+시\s*[가-힣]+구|[가-힣]+시|[가-힣]+군)", seg)
     if m:
         out["시군구"] = re.sub(r"\s+", " ", m.group(1)).strip()
 
-    m = re.search(r"([가-힣]+[동리])\s+(\d+(?:-\d+)?)", line)
-    if m:
-        out["법정동"] = m.group(1)
-        out["지번"] = m.group(2)
-        rest = line[m.end():].strip()
-        # 단지명은 지번 뒤부터 '제N층' 앞까지
-        m2 = re.search(r"^(.*?)\s*제\s*[\w가-힣]*\d*층", rest)
-        if m2:
-            out["단지명"] = m2.group(1).strip()
-            out["호실"] = rest[len(m2.group(1)):].strip()
-        else:
-            out["단지명"] = rest.strip()
+    m = re.search(r"([가-힣]+[동리])\s+(\d+(?:-\d+)?)", seg)
+    if not m:
+        return out
+    out["법정동"] = m.group(1)
+    out["지번"] = m.group(2)
+    rest = seg[m.end():].strip()
 
-    # 동탄구는 2026년 분구라, 그 이전 사건은 '화성시 영천동'처럼 구 없이 표기된다.
-    # 실거래 데이터(41597)와 같은 축으로 묶으려면 동탄 법정동을 동탄구로 맞춰준다.
-    if out["시군구"] == "화성시" and out["법정동"] in DONGTAN_DONGS:
-        out["시군구"] = "화성시 동탄구"
+    # '834-1, 8층813호 (영천동,와이씨아이더스트타워)' 처럼
+    # 단지명이 괄호 안 뒤쪽에 오는 표기가 섞여 있다.
+    m2 = re.search(r"\(([^)]*)\)\s*$", rest)
+    if m2 and "," in m2.group(1):
+        out["단지명"] = m2.group(1).split(",")[-1].strip()
+        out["호실"] = rest[:m2.start()].strip(" ,")
+        return out
+
+    m3 = re.search(r"^(.*?)\s*(제\s*[가-힣]*\d*층.*)$", rest)
+    if m3:
+        out["단지명"] = m3.group(1).strip()
+        out["호실"] = m3.group(2).strip()
+    else:
+        out["단지명"] = rest.strip()
     return out
 
 
-def parse_block(block):
-    """물건 하나(줄 목록)를 dict 로 만든다. 매각되지 않았으면 None."""
-    text = "\n".join(block)
-
-    m = re.search(r"(\d{4}타경\d+(?:\(\d+\))?)\s*\|\s*(\S+)", text)
+def parse_record(body):
+    """물건 하나를 dict 로 만든다. 매각되지 않았으면 None."""
+    m = re.search(r"^(\d{4}타경\d+(?:\(\d+\))?)\|(.+?)(?=경기도|서울|인천|충청|강원)", body)
     if not m:
         return None
     case_no, court = m.group(1), m.group(2)
 
-    addr_line = ""
-    area_line = ""
-    for ln in block:
-        if ln.startswith("경기도") or ln.startswith("서울") or "시 " in ln[:12]:
-            if not addr_line:
-                addr_line = ln
-        if ln.startswith("토지") or ln.startswith("건물"):
-            area_line = ln
+    m = re.search(r"((?:경기도|서울|인천).*?)(?=토지\s|건물\s|감정가)", body)
+    addr_seg = m.group(1) if m else ""
 
-    appraise = 0
-    m = re.search(r"감정가\s*([\d,]+)", text)
+    land = build = 0.0
+    m = re.search(r"토지\s*([\d.]+)\s*㎡", body)
     if m:
-        appraise = to_int(m.group(1))
-
-    min_price = 0
-    m = re.search(r"최저가\((\d+)%\)\s*([\d,]+)", text)
+        land = to_float(m.group(1))
+    m = re.search(r"건물\s*([\d.]+)\s*㎡", body)
     if m:
-        min_price = to_int(m.group(2))
+        build = to_float(m.group(1))
 
-    sold_price = 0
-    sold_rate = 0.0
-    m = re.search(r"매각가\((\d+)%\)\s*([\d,]+)", text)
+    m = re.search(r"감정가\s*([\d,]+)", body)
+    appraise = to_int(m.group(1)) if m else 0
+
+    m = re.search(r"최저가\((\d+)%\)\s*([\d,]+)", body)
+    min_rate = int(m.group(1)) if m else 0
+    min_price = to_int(m.group(2)) if m else 0
+
+    m = re.search(r"매각가\((\d+)%\)\s*([\d,]+)", body)
     if m:
         sold_rate = float(m.group(1))
         sold_price = to_int(m.group(2))
     else:
-        return None          # 매각되지 않은 물건은 제외
+        # 매각가 항목이 비어 있고 '매각(N%)'만 있는 경우가 있다.
+        # 최저가와 비율이 같으면 최저가로 낙찰된 것으로 본다.
+        m2 = re.search(r"매각\((\d+)%\)", body)
+        if m2 and min_price and abs(int(m2.group(1)) - min_rate) <= 1:
+            sold_rate = float(m2.group(1))
+            sold_price = min_price
+        else:
+            return None          # 유찰·진행 중인 물건은 제외
 
-    sale_date = ""
-    m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
-    if m:
-        sale_date = m.group(1)
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", body)
+    sale_date = m.group(1) if m else ""
 
-    land, build = parse_area(area_line)
-    addr = parse_address(addr_line)
+    addr = parse_address(addr_seg)
+    if addr["시군구"] == "화성시" and addr["법정동"] in DONGTAN_DONGS:
+        addr["시군구"] = "화성시 동탄구"
 
     # 감정가 대비 최저가 비율로 유찰 횟수를 가늠한다.
-    # 통상 1회 유찰마다 30%씩 저감된다(70% -> 49% -> 34% -> 24%).
-    fail_map = {100: 0, 70: 1, 49: 2, 34: 3, 24: 4, 17: 5}
-    min_rate = round(min_price / appraise * 100) if appraise else 0
+    # 통상 1회 유찰마다 30%씩 저감된다(70% -> 49% -> 34% -> 24% -> 17% -> 12%).
+    fail_map = [(100, 0), (70, 1), (49, 2), (34, 3), (24, 4), (17, 5), (12, 6)]
     fails = ""
-    for k, v in fail_map.items():
+    for k, v in fail_map:
         if abs(min_rate - k) <= 2:
             fails = v
             break
@@ -183,26 +182,10 @@ def parse_block(block):
         "최저가율": min_rate,
         "유찰횟수": fails,
         "평당매각가": round(sold_price / 10000 / pyeong) if pyeong else "",
-        "대지권미등기": "O" if "대지권미등기" in text else "",
-        "대항력임차인": "O" if "대항력있는임차인" in text else "",
+        "평당감정가": round(appraise / 10000 / pyeong) if pyeong else "",
+        "대지권미등기": "O" if "대지권미등기" in body else "",
+        "대항력임차인": "O" if "대항력있는임차인" in body else "",
     }
-
-
-def split_blocks(text):
-    """'아파트형공장' 으로 시작하는 덩어리로 자른다."""
-    lines = [ln.strip() for ln in text.splitlines()]
-    blocks, cur = [], []
-    for ln in lines:
-        if ln in ("아파트형공장", "공장", "근린상가", "오피스텔", "상가"):
-            if cur:
-                blocks.append(cur)
-            cur = [ln]
-        elif cur:
-            cur.append(ln)
-    if cur:
-        blocks.append(cur)
-    # 아파트형공장만 남긴다
-    return [b for b in blocks if b and b[0] == "아파트형공장"]
 
 
 def band_of(rate):
@@ -212,31 +195,35 @@ def band_of(rate):
     return "기타"
 
 
-def write_summary(cases):
+def med(vals):
+    v = sorted(vals)
+    if not v:
+        return 0
+    n = len(v)
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+
+def write_summary(cases, total_listed):
     lines = []
     lines.append("[동탄·기흥 지식산업센터 경매 낙찰 요약]")
     lines.append("출처: 법원경매정보 물건상세검색 (아파트형공장), 직접 집계")
     lines.append("집계일: " + datetime.date.today().isoformat())
     dates = sorted(c["매각기일"] for c in cases if c["매각기일"])
     if dates:
-        lines.append("매각기일: {} ~ {} / 매각 {}건".format(
-            dates[0], dates[-1], len(cases)))
+        lines.append("매각기일 {} ~ {} / 검색 {}건 중 매각 {}건".format(
+            dates[0], dates[-1], total_listed, len(cases)))
     lines.append("")
 
-    def med(vals):
-        v = sorted(vals)
-        if not v:
-            return 0
-        n = len(v)
-        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
-
-    lines.append("■ 지역별 매각가율 (감정가 대비 %)")
+    lines.append("■ 지역별 (감정가 대비 매각가율 %)")
     by_sgg = defaultdict(list)
     for c in cases:
-        by_sgg[c["시군구"]].append(c["매각가율"])
-    for sgg, rates in sorted(by_sgg.items(), key=lambda x: -len(x[1])):
-        lines.append("  {} | {}건 | 중앙값 {:.0f}% | 범위 {:.0f}~{:.0f}%".format(
-            sgg, len(rates), med(rates), min(rates), max(rates)))
+        by_sgg[c["시군구"]].append(c)
+    for sgg, items in sorted(by_sgg.items(), key=lambda x: -len(x[1])):
+        rates = [i["매각가율"] for i in items]
+        pp = [i["평당매각가"] for i in items if i["평당매각가"]]
+        lines.append("  {} | {}건 | 매각가율 중앙값 {:.0f}% (범위 {:.0f}~{:.0f}%) | 평당매각가 중앙값 {}만원".format(
+            sgg, len(items), med(rates), min(rates), max(rates),
+            "{:,.0f}".format(med(pp)) if pp else "-"))
     lines.append("")
 
     lines.append("■ 단지별 (2건 이상)")
@@ -244,12 +231,12 @@ def write_summary(cases):
     for c in cases:
         by_cx[(c["시군구"], c["단지명"])].append(c)
     for (sgg, cx), items in sorted(by_cx.items(), key=lambda x: -len(x[1])):
-        if len(items) < 2:
+        if len(items) < 2 or not cx:
             continue
         rates = [i["매각가율"] for i in items]
         pp = [i["평당매각가"] for i in items if i["평당매각가"]]
-        lines.append("  {} ({}) | {}건 | 매각가율 중앙값 {:.0f}% | 평당 {}만원".format(
-            cx, sgg, len(items), med(rates),
+        lines.append("  {} | {}건 | 매각가율 중앙값 {:.0f}% | 평당 {}만원".format(
+            cx, len(items), med(rates),
             "{:,.0f}".format(med(pp)) if pp else "-"))
     lines.append("")
 
@@ -262,15 +249,24 @@ def write_summary(cases):
             lines.append("  {} : {}건".format(name, bands[name]))
     lines.append("")
 
+    lines.append("■ 유찰 횟수별")
+    by_fail = defaultdict(list)
+    for c in cases:
+        if c["유찰횟수"] != "":
+            by_fail[c["유찰횟수"]].append(c["매각가율"])
+    for k in sorted(by_fail):
+        lines.append("  {}회 유찰 | {}건 | 매각가율 중앙값 {:.0f}%".format(
+            k, len(by_fail[k]), med(by_fail[k])))
+    lines.append("")
+
     unreg = [c for c in cases if c["대지권미등기"]]
-    if unreg:
-        lines.append("■ 대지권 미등기 물건")
-        lines.append("  {}건 | 매각가율 중앙값 {:.0f}%".format(
+    reg = [c for c in cases if not c["대지권미등기"]]
+    if unreg and reg:
+        lines.append("■ 대지권 미등기 여부")
+        lines.append("  미등기 {}건 | 매각가율 중앙값 {:.0f}%".format(
             len(unreg), med([c["매각가율"] for c in unreg])))
-        reg = [c for c in cases if not c["대지권미등기"]]
-        if reg:
-            lines.append("  (대지권 등기 물건 {}건은 중앙값 {:.0f}%)".format(
-                len(reg), med([c["매각가율"] for c in reg])))
+        lines.append("  등기   {}건 | 매각가율 중앙값 {:.0f}%".format(
+            len(reg), med([c["매각가율"] for c in reg])))
 
     text = "\n".join(lines)
     with open(OUT_SUMMARY, "w", encoding="utf-8") as f:
@@ -285,24 +281,25 @@ def main():
         raise SystemExit(1)
 
     cases = []
+    total_listed = 0
     for path in files:
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        blocks = split_blocks(text)
+        records = split_records(text)
+        total_listed += len(records)
         n = 0
-        for b in blocks:
-            c = parse_block(b)
+        for body in records:
+            c = parse_record(body)
             if c:
                 cases.append(c)
                 n += 1
         print("{} : 물건 {}개 중 매각 {}건".format(
-            os.path.basename(path), len(blocks), n))
+            os.path.basename(path), len(records), n))
 
     if not cases:
         print("파싱된 매각 사건이 없습니다.")
         raise SystemExit(1)
 
-    # 사건번호 중복 제거 (여러 파일에 겹쳐 들어간 경우)
     dedup = {}
     for c in cases:
         dedup[c["사건번호"]] = c
@@ -315,7 +312,7 @@ def main():
         w.writerows(cases)
     print("\n저장: {} ({}건)\n".format(OUT_CASES, len(cases)))
 
-    write_summary(cases)
+    write_summary(cases, total_listed)
 
 
 if __name__ == "__main__":
