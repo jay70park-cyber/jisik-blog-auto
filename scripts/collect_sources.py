@@ -144,7 +144,6 @@ def pick_track(today=None):
     목요일 2주    -> 지역 개발 이슈
     목요일 4주    -> 경매 (환경변수 AUCTION_READY=1일 때만, 아니면 지역 개발)
     """
-    return "auction", "경매취득", "경매 취득", AUCTION_KEYWORDS, 1   # 임시 테스트
     if today is None:
         kst = datetime.timezone(datetime.timedelta(hours=9))
         today = datetime.datetime.now(kst).date()
