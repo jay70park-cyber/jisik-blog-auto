@@ -1,0 +1,25 @@
+name: Check Data Freshness
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매월 1일 08:30 KST
+    - cron: '30 23 1 * *'
+
+concurrency:
+  group: jisik-blog-pipeline
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_data_freshness.py
