@@ -46,6 +46,12 @@ jobs:
         run: |
           python3 scripts/analyze_realprice.py
 
+      - name: Parse auction data
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 scripts/parse_auction.py
+
       - name: Commit collected data
         if: always()
         run: |
