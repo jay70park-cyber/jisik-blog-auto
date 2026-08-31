@@ -140,6 +140,19 @@ def load_local_headlines(keyword="", max_items=25):
 
     print("뉴스 제목 로드: {}건 (키워드 관련 {}건)".format(len(picked), len(hit)))
     return "\n".join("- " + t for t in picked), data.get("updated", "")
+
+def load_auction_summary(max_chars=2000):
+    """경매 낙찰 분석 요약을 읽어온다. 파일이 없으면 빈 문자열."""
+    path = os.path.join("data", "auction_summary.txt")
+    if not os.path.exists(path):
+        print("경매 요약 파일 없음 - 경매 데이터 없이 진행합니다.")
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n(이하 생략)"
+    print("경매 요약 로드: {}자".format(len(text)))
+    return text    
     
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
@@ -149,12 +162,13 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     
     # 실거래 트랙은 데이터가 주인공이므로 독자와 무관하게 항상 넘긴다.
     # 그 외 트랙에서만 임차인 독자에게 매매 데이터를 빼준다.
-    if "임차" in reader and category != "realprice":
+    if "임차" in reader and category not in ("realprice", "auction"):
         realprice = ""
         print("임차인 독자 - 매매 실거래 데이터는 넘기지 않습니다.")
     else:
         realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
+    auction = load_auction_summary() if category == "auction" else ""
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
     refs_rule = ("위에 제공된 네이버 블로그 참고 링크만 제목과 함께 나열하세요."
                  if refs else
@@ -201,9 +215,68 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 제목만 있으므로 구체적 내용은 웹 검색으로 확인하고, 확인된 것만 쓰세요.
 - 제목을 그대로 나열하지 마세요. 흐름을 읽고 하나의 이야기로 엮으세요.
 """
+
+    auction_block = ""
+    if auction:
+        auction_block = f"""[경매 낙찰 데이터 — 직접 수집한 자료]
+{auction}
+
+이 수치는 법원경매정보에서 아파트형공장(지식산업센터) 물건을 직접 조회해 집계한 것입니다.
+- 본문의 모든 낙찰 관련 수치는 이 데이터만 쓰세요. 유료 경매정보 사이트나 추정치를 가져오지 마세요.
+- 매각가율은 감정가 대비 비율입니다. 실거래가 대비가 아니라는 점을 명시하세요.
+- 평당매각가는 건물면적(계약면적) 기준입니다.
+- 표본이 특정 단지에 몰려 있으면 그 사실을 밝히세요.
+- 실거래 데이터가 함께 주어졌다면, 경매가와 실거래가를 나란히 놓고 비교하세요.
+  이 비교가 이 글의 가장 큰 가치입니다.
+"""
     # 트랙마다 글의 성격이 다르다. 실거래 분석은 판단 도구가 아니라 현황 파악 글이라
     # "무슨 일이 있었나 → 판단 도구 → 판단 기준" 흐름이 맞지 않는다.
-    if category == "realprice":
+    
+    if category == "auction":
+        structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
+
+1. 제목(H1): 이번 글의 핵심 숫자가 드러나게. 낚시성 표현은 쓰지 마세요.
+
+2. ## 3초 요약
+   - 경매 데이터에서 가장 눈에 띄는 숫자를 **한 문장**으로 먼저 제시하세요.
+   - 이어서 "이 글이 필요한 사람"과 "필요 없는 사람"을 각각 한 줄씩 씁니다.
+
+3. ## 이번 집계 숫자
+   - 지역별 매각가율과 평당매각가를 표로 정리하세요.
+   - 표 아래에 이 표를 어떻게 읽어야 하는지 두세 문장으로 안내하세요.
+
+4. ## 유찰이 쌓이면 값은 얼마나 내려가는가
+   - 유찰 횟수별 매각가율을 표로 보여주세요.
+   - 어느 구간에서 값이 크게 떨어지는지 짚고, 그 의미를 설명하세요.
+   - 이것이 입찰 시점을 정하는 실질적 판단 재료입니다.
+
+5. ## 실거래가와 견주면
+   - 실거래 데이터가 함께 주어졌다면 경매 평당가와 실거래 평당가를 비교하세요.
+   - 감정가는 시세를 반영하지만 낙찰가는 그렇지 않다는 점을 숫자로 보여주세요.
+   - 실거래 데이터가 없으면 이 섹션을 생략하세요.
+
+6. ## 이 숫자를 읽을 때 주의할 점 (필수)
+   - 표본이 특정 단지에 몰려 있으면 밝히세요.
+   - 매각가율은 감정가 대비이며, 감정 시점과 매각 시점 사이에 시차가 있습니다.
+   - 낙찰가에는 명도비용·체납관리비·대지권 문제 해결 비용이 빠져 있습니다.
+   - 이 섹션을 형식적으로 쓰지 마세요. 한계를 밝히는 것이 이 글의 신뢰입니다.
+
+7. ## 내가 보는 물건은 어디쯤인가
+   - 독자가 관심 물건의 감정가·최저가·유찰횟수를 이 표에 대입하는 방법을 알려주세요.
+{calc_block}
+
+8. ## 직접 확인하는 법
+   - 법원경매정보(courtauction.go.kr)에서 같은 데이터를 조회하는 순서를 알려주세요.
+   - 물건상세검색 → 소재지 지정 → 용도 '아파트형공장' 선택 → 기간 설정까지 구체적으로요.
+
+9. ## 더 읽어보기
+   - {refs_rule}
+
+10. ## 이 데이터에 대하여
+   - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
+   - (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙습니다. 표를 직접 만들지 마세요.)"""
+   
+    elif category == "realprice":
         structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
 
 1. 제목(H1): 이번 글의 핵심 숫자가 드러나게. 낚시성 표현은 쓰지 마세요.
@@ -303,6 +376,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
 {realprice_block}
 {news_block}
+{auction_block}
 ──────────────────────────────
 가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**
 독자가 다 읽고 나서 "그래서 나는 무엇을 하면 되는가"에 스스로 답할 수 있어야 합니다.
