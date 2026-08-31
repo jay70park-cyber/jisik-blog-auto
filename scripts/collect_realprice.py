@@ -65,7 +65,7 @@ def month_list(months_back, until=None):
     return list(reversed(out))
 
 
-def fetch_month(lawd_cd, ym, timeout=15, retries=2):
+def fetch_month(lawd_cd, ym, timeout=30, retries=2):
     """한 달치 거래를 조회해 dict 목록으로 돌려준다."""
     url = BASE_URL + "?" + urllib.parse.urlencode({
         "serviceKey": SERVICE_KEY,
@@ -77,7 +77,12 @@ def fetch_month(lawd_cd, ym, timeout=15, retries=2):
   
     for attempt in range(1, retries + 1):
         try:
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/120.0 Safari/537.36",
+                "Accept": "application/xml",
+            })
             with urllib.request.urlopen(req, timeout=timeout) as res:
                 xml_text = res.read().decode("utf-8")
             break
