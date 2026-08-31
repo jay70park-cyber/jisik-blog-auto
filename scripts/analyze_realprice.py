@@ -140,9 +140,7 @@ def load_raw(master):
             r["_평당가"] = to_int(r.get("pyeongPrice"))
             r["_층"] = to_int(r.get("floor"))
             r["_ym"] = "{}-{:02d}".format(
-                r.get("dealYear", ""), to_int(r.get("dealMonth")))
-            rows.append(r)
-
+                r.get("dealYear", ""), to_int(r.get("dealMonth")))      
             r["_ym"] = "{}-{:02d}".format(
                 r.get("dealYear", ""), to_int(r.get("dealMonth")))
             rows.append(r)
