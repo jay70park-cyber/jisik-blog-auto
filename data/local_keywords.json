@@ -1,7 +1,15 @@
 {
-  "updated": "2026-08-28",
+  "updated": "2026-09-01",
   "source": "네이버 뉴스 최근 21일 + 검색어 트렌드 검증",
   "keywords": [
+    {
+      "keyword": "동탄 용인",
+      "first_seen": "2026-09-01",
+      "last_seen": "2026-09-01",
+      "news_count": 2,
+      "trend": 100.0,
+      "pinned": true
+    },
     {
       "keyword": "동탄 동탄역",
       "first_seen": "2026-08-28",
@@ -16,14 +24,6 @@
       "last_seen": "2026-08-26",
       "news_count": 6,
       "trend": 100.0,
-      "pinned": true
-    },
-    {
-      "keyword": "동탄 부동산",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-28",
-      "news_count": 2,
-      "trend": 81.89102,
       "pinned": true
     },
     {
@@ -43,14 +43,6 @@
       "pinned": true
     },
     {
-      "keyword": "동탄 집값",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 10,
-      "trend": 28.0,
-      "pinned": true
-    },
-    {
       "keyword": "동탄 신도시",
       "first_seen": "2026-08-26",
       "last_seen": "2026-08-26",
@@ -59,11 +51,35 @@
       "pinned": true
     },
     {
+      "keyword": "동탄 집값",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-09-01",
+      "news_count": 6,
+      "trend": 17.98396,
+      "pinned": true
+    },
+    {
+      "keyword": "동탄 부동산",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-09-01",
+      "news_count": 3,
+      "trend": 17.42243,
+      "pinned": true
+    },
+    {
+      "keyword": "동탄 삼성",
+      "first_seen": "2026-09-01",
+      "last_seen": "2026-09-01",
+      "news_count": 2,
+      "trend": 13.95348,
+      "pinned": true
+    },
+    {
       "keyword": "동탄 반도체",
       "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 2,
-      "trend": 23.33333,
+      "last_seen": "2026-09-01",
+      "news_count": 5,
+      "trend": 13.33333,
       "pinned": true
     },
     {
@@ -83,22 +99,6 @@
       "trend": 0.0,
       "pinned": true,
       "manual": true
-    },
-    {
-      "keyword": "동탄 어반원",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-28",
-      "news_count": 3,
-      "trend": 100.0,
-      "pinned": false
-    },
-    {
-      "keyword": "동탄 분당",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-08-26",
-      "news_count": 2,
-      "trend": 100.0,
-      "pinned": false
     }
   ]
 }
