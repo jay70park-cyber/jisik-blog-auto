@@ -203,6 +203,84 @@ def med(vals):
     return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
 
 
+def half_of(date_str):
+    """'2026-08-28' -> '2026 하반기'. 반기 단위로 묶어야 표본이 충분해진다."""
+    try:
+        y, m, _ = [int(x) for x in date_str.split("-")]
+        return "{} {}".format(y, "상반기" if m <= 6 else "하반기")
+    except (ValueError, AttributeError):
+        return ""
+
+
+def quarter_of(date_str):
+    """'2026-08-28' -> '2026 3Q'."""
+    try:
+        y, m, _ = [int(x) for x in date_str.split("-")]
+        return "{} {}Q".format(y, (m - 1) // 3 + 1)
+    except (ValueError, AttributeError):
+        return ""
+
+
+def year_of(date_str):
+    try:
+        return date_str.split("-")[0]
+    except (ValueError, AttributeError):
+        return ""
+
+
+def size_band(pyeong):
+    """전용 규모대. 소형 호실과 대형 호실은 매수층이 달라 따로 본다."""
+    try:
+        p = float(pyeong)
+    except (ValueError, TypeError):
+        return ""
+    if p < 15:
+        return "15평 미만"
+    if p < 30:
+        return "15~30평"
+    if p < 50:
+        return "30~50평"
+    return "50평 이상"
+
+
+def floor_band(floor_text):
+    """호실 표기에서 층수를 뽑아 구간으로 나눈다.
+    지산은 저층부(상가·근생)와 중고층부(업무)의 성격이 달라 값이 갈린다."""
+    m = re.search(r"제?\s*지하\s*(\d+)\s*층", str(floor_text))
+    if m:
+        return "지하"
+    m = re.search(r"제?\s*(\d+)\s*층", str(floor_text))
+    if not m:
+        return ""
+    f = int(m.group(1))
+    if f <= 2:
+        return "1~2층"
+    if f <= 5:
+        return "3~5층"
+    if f <= 10:
+        return "6~10층"
+    return "11층 이상"
+
+
+def trend_arrow(vals):
+    """앞뒤 값을 견줘 방향을 한 글자로. 표에 붙이면 흐름이 눈에 들어온다."""
+    if len(vals) < 2:
+        return ""
+    diff = vals[-1] - vals[0]
+    if abs(diff) < 3:
+        return "→ 보합"
+    return "↑ 상승" if diff > 0 else "↓ 하락"
+
+
+def group_line(name, items, indent="  "):
+    """한 그룹의 통계 한 줄. 여러 곳에서 같은 모양으로 쓴다."""
+    rates = [i["매각가율"] for i in items]
+    pp = [i["평당매각가"] for i in items if i["평당매각가"]]
+    return "{}{} | {}건 | 매각가율 중앙값 {:.0f}% | 평당 {}만원".format(
+        indent, name, len(items), med(rates),
+        "{:,.0f}".format(med(pp)) if pp else "-")
+
+
 def write_summary(cases, total_listed):
     lines = []
     lines.append("[동탄·기흥 지식산업센터 경매 낙찰 요약]")
@@ -226,6 +304,61 @@ def write_summary(cases, total_listed):
             "{:,.0f}".format(med(pp)) if pp else "-"))
     lines.append("")
 
+    # ── 시계열 ────────────────────────────────
+    lines.append("■ 반기별 추이")
+    by_half = defaultdict(list)
+    for c in cases:
+        h = half_of(c["매각기일"])
+        if h:
+            by_half[h].append(c)
+    halves = sorted(by_half)
+    for h in halves:
+        lines.append(group_line(h, by_half[h]))
+    if len(halves) >= 2:
+        seq = [med([i["매각가율"] for i in by_half[h]]) for h in halves]
+        lines.append("  → 매각가율 {:.0f}% ({}) 에서 {:.0f}% ({}) 로 {}".format(
+            seq[0], halves[0], seq[-1], halves[-1], trend_arrow(seq)))
+    lines.append("")
+
+    lines.append("■ 분기별 추이")
+    by_q = defaultdict(list)
+    for c in cases:
+        q = quarter_of(c["매각기일"])
+        if q:
+            by_q[q].append(c)
+    for q in sorted(by_q):
+        lines.append(group_line(q, by_q[q]))
+    lines.append("")
+
+    lines.append("■ 연도별 × 지역")
+    by_ys = defaultdict(list)
+    for c in cases:
+        y = year_of(c["매각기일"])
+        if y:
+            by_ys[(y, c["시군구"])].append(c)
+    for (y, sgg) in sorted(by_ys):
+        lines.append(group_line("{} {}".format(y, sgg), by_ys[(y, sgg)]))
+    lines.append("")
+
+    lines.append("■ 반기별 × 지역 (같은 방향으로 움직이는가)")
+    by_hs = defaultdict(list)
+    for c in cases:
+        h = half_of(c["매각기일"])
+        if h:
+            by_hs[(c["시군구"], h)].append(c)
+    for sgg in sorted(set(k[0] for k in by_hs)):
+        seq, labels = [], []
+        for h in halves:
+            items = by_hs.get((sgg, h))
+            if items:
+                seq.append(med([i["매각가율"] for i in items]))
+                labels.append("{} {:.0f}%({}건)".format(h[-3:], seq[-1], len(items)))
+        if labels:
+            lines.append("  {} : {} {}".format(
+                sgg, " → ".join(labels), trend_arrow(seq)))
+    lines.append("")
+
+    # ── 단면 ──────────────────────────────────
     lines.append("■ 단지별 (2건 이상)")
     by_cx = defaultdict(list)
     for c in cases:
@@ -233,11 +366,7 @@ def write_summary(cases, total_listed):
     for (sgg, cx), items in sorted(by_cx.items(), key=lambda x: -len(x[1])):
         if len(items) < 2 or not cx:
             continue
-        rates = [i["매각가율"] for i in items]
-        pp = [i["평당매각가"] for i in items if i["평당매각가"]]
-        lines.append("  {} | {}건 | 매각가율 중앙값 {:.0f}% | 평당 {}만원".format(
-            cx, len(items), med(rates),
-            "{:,.0f}".format(med(pp)) if pp else "-"))
+        lines.append(group_line(cx, items))
     lines.append("")
 
     lines.append("■ 매각가율 구간 분포")
@@ -246,27 +375,78 @@ def write_summary(cases, total_listed):
         bands[band_of(c["매각가율"])] += 1
     for _, _, name in BANDS:
         if bands.get(name):
-            lines.append("  {} : {}건".format(name, bands[name]))
+            lines.append("  {} : {}건 ({:.0f}%)".format(
+                name, bands[name], bands[name] * 100.0 / len(cases)))
     lines.append("")
 
     lines.append("■ 유찰 횟수별")
     by_fail = defaultdict(list)
     for c in cases:
         if c["유찰횟수"] != "":
-            by_fail[c["유찰횟수"]].append(c["매각가율"])
+            by_fail[c["유찰횟수"]].append(c)
+    prev = None
     for k in sorted(by_fail):
-        lines.append("  {}회 유찰 | {}건 | 매각가율 중앙값 {:.0f}%".format(
-            k, len(by_fail[k]), med(by_fail[k])))
+        cur = med([i["매각가율"] for i in by_fail[k]])
+        gap = ""
+        if prev is not None:
+            gap = " (직전 회차 대비 {:+.0f}%p)".format(cur - prev)
+        lines.append("  {}회 유찰 | {}건 | 매각가율 중앙값 {:.0f}%{}".format(
+            k, len(by_fail[k]), cur, gap))
+        prev = cur
+    lines.append("")
+
+    lines.append("■ 전용 규모별")
+    by_size = defaultdict(list)
+    for c in cases:
+        s = size_band(c["건물평수"])
+        if s:
+            by_size[s].append(c)
+    for s in ["15평 미만", "15~30평", "30~50평", "50평 이상"]:
+        if by_size.get(s):
+            lines.append(group_line(s, by_size[s]))
+    lines.append("")
+
+    lines.append("■ 층별")
+    by_floor = defaultdict(list)
+    for c in cases:
+        f = floor_band(c["호실"])
+        if f:
+            by_floor[f].append(c)
+    for f in ["지하", "1~2층", "3~5층", "6~10층", "11층 이상"]:
+        if by_floor.get(f):
+            lines.append(group_line(f, by_floor[f]))
     lines.append("")
 
     unreg = [c for c in cases if c["대지권미등기"]]
     reg = [c for c in cases if not c["대지권미등기"]]
     if unreg and reg:
         lines.append("■ 대지권 미등기 여부")
-        lines.append("  미등기 {}건 | 매각가율 중앙값 {:.0f}%".format(
-            len(unreg), med([c["매각가율"] for c in unreg])))
-        lines.append("  등기   {}건 | 매각가율 중앙값 {:.0f}%".format(
-            len(reg), med([c["매각가율"] for c in reg])))
+        lines.append(group_line("미등기", unreg))
+        lines.append(group_line("등기  ", reg))
+        lines.append("")
+
+    tenant = [c for c in cases if c["대항력임차인"]]
+    if tenant:
+        lines.append("■ 대항력 있는 임차인")
+        lines.append(group_line("있음", tenant))
+        lines.append(group_line("없음", [c for c in cases if not c["대항력임차인"]]))
+        lines.append("")
+
+    lines.append("■ 감정가 규모별")
+    by_amt = defaultdict(list)
+    for c in cases:
+        a = c["감정가"] / 100000000.0        # 억 단위
+        if a < 1.5:
+            by_amt["1.5억 미만"].append(c)
+        elif a < 3:
+            by_amt["1.5~3억"].append(c)
+        elif a < 5:
+            by_amt["3~5억"].append(c)
+        else:
+            by_amt["5억 이상"].append(c)
+    for k in ["1.5억 미만", "1.5~3억", "3~5억", "5억 이상"]:
+        if by_amt.get(k):
+            lines.append(group_line(k, by_amt[k]))
 
     text = "\n".join(lines)
     with open(OUT_SUMMARY, "w", encoding="utf-8") as f:
