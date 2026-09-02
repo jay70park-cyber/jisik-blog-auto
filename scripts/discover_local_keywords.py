@@ -30,6 +30,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 DATA_DIR = "data"
 KEYWORD_FILE = os.path.join(DATA_DIR, "local_keywords.json")
 HEADLINE_FILE = os.path.join(DATA_DIR, "local_headlines.json")
+STATE_UPDATE_ID = os.path.join("state", "last_update_id.txt")
 
 # 뉴스를 긁어올 씨앗 질의.
 # "동탄 개발" 처럼 넓게 잡으면 지역 생활·연예 기사가 대량으로 딸려온다.
@@ -228,7 +229,18 @@ def get_updates(offset, timeout=20):
     except Exception as e:
         print("getUpdates 오류: " + str(e))
         return []
-
+      
+def mark_processed(update_id):
+    """텔레그램 진도를 기록한다.
+    이걸 안 하면 승인 확인 워크플로우가 같은 답장을 초안 수정 요청으로 오독한다."""
+    try:
+        os.makedirs("state", exist_ok=True)
+        with open(STATE_UPDATE_ID, "w", encoding="utf-8") as f:
+            f.write(str(update_id))
+        print("텔레그램 진도 기록: " + str(update_id))
+    except Exception as e:
+        print("진도 기록 실패: " + str(e))
+      
 def wait_for_reply(seconds=APPROVE_WAIT):
     """답장을 기다린다. 없으면 None."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
