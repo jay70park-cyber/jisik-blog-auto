@@ -1,34 +1,34 @@
 {
   "week_index": 1,
-  "track": "auction",
-  "category": "경매취득",
-  "category_display": "경매 취득",
+  "track": "realprice",
+  "category": "실거래분석",
+  "category_display": "실거래가 분석",
   "period": {
-    "start": "2026-08-03",
-    "end": "2026-08-31"
+    "start": "2026-08-05",
+    "end": "2026-09-02"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 경매",
-      "blog": 113635,
-      "cafe": 88647,
-      "trend": 100.0,
-      "score": 0.743
+      "keyword": "동탄 지식산업센터 매매",
+      "blog": 34438,
+      "cafe": 321447,
+      "trend": 35.71428,
+      "score": 0.883
     },
     {
-      "keyword": "상가 경매 권리분석",
-      "blog": 787653,
-      "cafe": 69608,
+      "keyword": "동탄 상가 시세",
+      "blog": 56601,
+      "cafe": 232524,
       "trend": 0.0,
-      "score": 0.457
+      "score": 0.445
     },
     {
-      "keyword": "동탄 공장 경매",
-      "blog": 16507,
-      "cafe": 10658,
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 16906,
+      "cafe": 211908,
       "trend": 0.0,
-      "score": 0.03
+      "score": 0.221
     }
   ],
-  "top_keyword": "지식산업센터 경매"
+  "top_keyword": "동탄 지식산업센터 매매"
 }
