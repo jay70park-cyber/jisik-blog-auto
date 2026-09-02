@@ -256,6 +256,7 @@ def wait_for_reply(seconds=APPROVE_WAIT):
                 if u.get("message", {}).get("chat", {}).get("id") == int(TELEGRAM_CHAT_ID)
                 and u.get("message", {}).get("text")]
         if msgs:
+            mark_processed(msgs[-1]["update_id"])
             return msgs[-1]["message"]["text"].strip()
         print("대기 중... 남은 시간 {}초".format(int(deadline - time.time())))
     return None
