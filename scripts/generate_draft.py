@@ -170,7 +170,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
     auction = load_auction_summary() if category == "auction" else ""
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
-    refs_rule = ("위에 제공된 네이버 블로그 참고 링크만 제목과 함께 나열하세요."
+    refs_rule = ("위에 제공된 참고 링크를 **제목과 URL을 함께** 마크다운 링크 형식으로 나열하세요. "
+                 "예: - [글 제목](https://blog.naver.com/...)  URL을 빼먹지 마세요."
                  if refs else
                  "**참고 링크가 없으므로 이 섹션을 통째로 생략하세요.** 없는 링크를 지어내지 마세요.")
     kw = result["top_keyword"]
