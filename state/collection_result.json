@@ -1,34 +1,34 @@
 {
-  "week_index": 1,
-  "track": "realprice",
-  "category": "실거래분석",
-  "category_display": "실거래가 분석",
+  "week_index": 0,
+  "track": "jisik",
+  "category": "개념_자격",
+  "category_display": "개념·입주자격",
   "period": {
-    "start": "2026-08-05",
-    "end": "2026-09-02"
+    "start": "2026-08-09",
+    "end": "2026-09-06"
   },
   "rows": [
     {
-      "keyword": "동탄 지식산업센터 매매",
-      "blog": 34438,
-      "cafe": 321447,
-      "trend": 35.71428,
-      "score": 0.883
+      "keyword": "동탄 지식산업센터 조건",
+      "blog": 23138,
+      "cafe": 198400,
+      "trend": 0.0,
+      "score": 0.5
     },
     {
-      "keyword": "동탄 상가 시세",
-      "blog": 56601,
-      "cafe": 232524,
+      "keyword": "동탄 지산 입주자격",
+      "blog": 1356,
+      "cafe": 198203,
       "trend": 0.0,
-      "score": 0.445
+      "score": 0.217
     },
     {
-      "keyword": "동탄 지식산업센터 시세",
-      "blog": 16906,
-      "cafe": 211908,
+      "keyword": "동탄 지식산업센터 입주업종",
+      "blog": 12177,
+      "cafe": 22562,
       "trend": 0.0,
-      "score": 0.221
+      "score": 0.181
     }
   ],
-  "top_keyword": "동탄 지식산업센터 매매"
+  "top_keyword": "동탄 지식산업센터 조건"
 }
