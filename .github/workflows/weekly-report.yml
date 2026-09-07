@@ -1,0 +1,19 @@
+name: Weekly Hwaseong Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 22 * * 0'   # 월요일 07:30 KST
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/weekly_hscity_report.py
