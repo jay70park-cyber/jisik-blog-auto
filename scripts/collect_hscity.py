@@ -23,6 +23,7 @@ import csv
 import time
 import html
 import datetime
+import sys
 import urllib.request
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -293,7 +294,39 @@ def diagnose(page_html):
     print("=== 진단 끝 ===\n")
 
 
+def backfill():
+    """이미 모아둔 고시로 현안 단계를 한 번 채운다.
+
+    현안 매칭은 나중에 붙인 기능이라, 그 전에 수집된 것들은
+    현안 열이 비어 있다. 여기서 다시 대조한다. 한 번만 쓰면 된다.
+    """
+    rows = list(load_existing().values())
+    if not rows:
+        print("누적 CSV가 없습니다.")
+        return
+    agenda = load_agenda()
+    for r in rows:
+        r["현안"] = ", ".join(match_agenda(r.get("제목", ""), agenda))
+    hit = [r for r in rows if r["현안"]]
+    print("누적 {}건 중 현안 관련 {}건".format(len(rows), len(hit)))
+    for r in sorted(hit, key=lambda r: r.get("공고일자", "")):
+        print("  {} [{}] {}".format(
+            r.get("공고일자", ""), r["현안"], r.get("제목", "")[:55]))
+
+    changed = update_agenda(rows)
+    print("\n[현안 단계 갱신] {}건".format(len(changed)))
+    for name, stage, doubt in changed:
+        print("  {} → {}{}".format(
+            name, stage or "?", "  ⚠ " + doubt if doubt else ""))
+    if not changed:
+        print("  갱신할 것이 없습니다. 키워드가 안 맞거나 관련 고시가 없습니다.")
+
+
 def main():
+    if "--backfill" in sys.argv:
+        backfill()
+        return
+
     today = datetime.date.today().isoformat()
     existing = load_existing()
     print("기존 누적 {}건".format(len(existing)))
