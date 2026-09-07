@@ -1,0 +1,15 @@
+name: Probe Hwaseong POST
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/probe_hscity.py
