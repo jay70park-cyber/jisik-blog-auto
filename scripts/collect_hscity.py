@@ -31,18 +31,9 @@ OUT_CSV = os.path.join(DATA_DIR, "hscity_notices.csv")
 
 BASE = "https://www.hscity.go.kr/www/gosi/BD_notice.do"
 
-# 부동산·개발과 관련된 부서만 본다.
-# 노사협력과·복지과 같은 곳은 지산 콘텐츠와 무관해 아예 조회하지 않는다.
-DEPARTMENTS = [
-    "투자유치과",
-    "토지정보과",
-    "도로과",
-    "도시정책과",
-    "도시개발과",
-    "주택정책과",
-    "건축과",
-    "산업입지과",
-]
+# 부서 대신 검색어로 훑는다. 594건이 걸리므로 최근 것부터 몇 페이지만 본다.
+KEYWORDS = ["동탄", "지식산업센터", "산업단지"]
+PAGES = 3          # 페이지당 10건이므로 검색어당 30건
 
 # 제목에 이 말이 있으면 현안 후보로 본다.
 AGENDA_WORDS = [
@@ -61,14 +52,15 @@ DONGTAN_WORDS = [
 FIELDS = ["부서", "고시번호", "제목", "공고일자", "게재기간", "동탄관련", "수집일"]
 
 
-def fetch(dep, page=1, timeout=30, retries=2):
-    """부서별 고시 목록 HTML을 받아온다."""
+def fetch(keyword, page=1, timeout=30, retries=2):
+    """검색어로 고시 목록 HTML을 받아온다.
+    부서별로 훑으면 신도시조성과·AI스마트전략실 같은 곳을 놓친다.
+    '동탄'으로 검색하면 부서 무관하게 지역 현안이 다 걸린다."""
     params = {
         "q_notAncmtSeCode": "01",     # 01 = 고시
-        "q_depNm": dep,
+        "q_sv": keyword,
+        "q_currPage": page,
     }
-    if page > 1:
-        params["q_cp"] = page
     url = BASE + "?" + urllib.parse.urlencode(params)
 
     for attempt in range(1, retries + 1):
@@ -195,29 +187,28 @@ def main():
     existing = load_existing()
     print("기존 누적: {}건".format(len(existing)))
 
-    all_rows = []
+        all_rows = []
     first_html = ""
-    for dep in DEPARTMENTS:
-        page_html = fetch(dep)
-        if not page_html:
-            print("{} : HTML을 받지 못했습니다.".format(dep))
-            continue
-        if not first_html:
-            first_html = page_html
-
-        rows = parse_rows(page_html)
-        kept = 0
-        for r in rows:
-            if not r["제목"] or not is_agenda(r["제목"]):
+    for kw in KEYWORDS:
+        for page in range(1, PAGES + 1):
+            page_html = fetch(kw, page)
+            if not page_html:
+                print("{} {}쪽 : HTML을 받지 못했습니다.".format(kw, page))
                 continue
-            r["부서"] = r["부서"] or dep
-            r["동탄관련"] = "O" if is_dongtan(r["제목"]) else ""
-            r["수집일"] = today
-            all_rows.append(r)
-            kept += 1
-        print("{} : 행 {}개 중 현안 후보 {}건".format(dep, len(rows), kept))
-        time.sleep(0.5)
+            if not first_html:
+                first_html = page_html
 
+            rows = parse_rows(page_html)
+            kept = 0
+            for r in rows:
+                if not r["제목"]:
+                    continue
+                r["동탄관련"] = "O" if is_dongtan(r["제목"]) else ""
+                r["수집일"] = today
+                all_rows.append(r)
+                kept += 1
+            print("{} {}쪽 : {}건".format(kw, page, kept))
+            time.sleep(0.5)
     if not all_rows:
         print("\n수집된 고시가 없습니다.")
         if first_html:
