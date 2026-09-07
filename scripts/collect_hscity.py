@@ -86,7 +86,10 @@ DONGTAN_WORDS = [
 ]
 
 FIELDS = ["게시판", "부서", "고시번호", "제목", "공고일자",
-          "게재기간", "동탄관련", "현안", "링크", "수집일"]
+          "게재기간", "동탄관련", "현안", "글감", "링크", "수집일"]
+
+# 사람이 손으로 적는 열. 다시 수집해도 덮어쓰면 안 된다.
+MANUAL_FIELDS = ["글감"]
 
 
 def fetch(url, timeout=30, retries=3):
@@ -364,6 +367,9 @@ def backfill(max_pages=5):
                     key = (r["고시번호"], r["제목"])
                     if key not in merged:
                         added += 1
+                    else:
+                        for c in MANUAL_FIELDS:
+                            r[c] = merged[key].get(c, "")
                     merged[key] = r
                     got += 1
                 time.sleep(1)
@@ -450,6 +456,10 @@ def main():
         key = (r["고시번호"], r["제목"])
         if key not in merged:
             new_rows.append(r)
+        else:
+            # 글감 표시는 Jay가 손으로 적은 것이라 수집 결과가 덮으면 안 된다
+            for c in MANUAL_FIELDS:
+                r[c] = merged[key].get(c, "")
         merged[key] = r
 
     os.makedirs(DATA_DIR, exist_ok=True)
