@@ -2,8 +2,13 @@ name: Collect Hwaseong Notices
 
 on:
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: '누적분으로 현안 단계 채우기 (최초 1회만)'
+        type: boolean
+        default: false
   schedule:
-    - cron: '10 22 * * *'   # 매일 07:10 KST
+    - cron: '10 22 * * *'
 
 concurrency:
   group: jisik-blog-pipeline
@@ -20,7 +25,15 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 scripts/collect_hscity.py
+
+      - name: Collect
+        run: |
+          if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
+            python3 scripts/collect_hscity.py --backfill
+          else
+            python3 scripts/collect_hscity.py
+          fi
+
       - name: Commit notices
         if: always()
         run: |
