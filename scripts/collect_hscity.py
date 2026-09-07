@@ -24,6 +24,7 @@ import time
 import html
 import datetime
 import sys
+import urllib.parse
 import urllib.request
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -101,6 +102,37 @@ def fetch(url, timeout=30, retries=3):
                 return res.read().decode("utf-8", errors="replace")
         except Exception as e:
             print("  조회 실패 ({}/{}): {}".format(attempt, retries, e))
+            if attempt < retries:
+                time.sleep(attempt * 3)
+    return ""
+
+
+def fetch_dept(url, dept, page=1, timeout=30, retries=3):
+    """부서로 걸러 조회한다.
+
+    이 사이트는 부서 필터를 GET으로 주면 무시하고 전체를 돌려준다.
+    POST 로 q_depNm 을 보내야 실제로 걸린다(2026-09 실측).
+    페이지 필드 이름은 아직 못 찾았으므로, q_currPage 를 같이 보내보고
+    1페이지와 결과가 같으면 페이지 넘김이 안 되는 것으로 보고 멈춘다.
+    """
+    body = urllib.parse.urlencode(
+        {"q_depNm": dept, "q_currPage": str(page)}).encode("utf-8")
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, data=body, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/120.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "ko-KR,ko;q=0.9",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": url,
+            })
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                return res.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            print("    {} {}p 실패 ({}/{}): {}".format(
+                dept, page, attempt, retries, e))
             if attempt < retries:
                 time.sleep(attempt * 3)
     return ""
@@ -294,21 +326,63 @@ def diagnose(page_html):
     print("=== 진단 끝 ===\n")
 
 
-def backfill():
-    """이미 모아둔 고시로 현안 단계를 한 번 채운다.
+def backfill(max_pages=5):
+    """부서별로 과거 고시를 긁어 누적에 합치고 현안 단계를 채운다.
 
-    현안 매칭은 나중에 붙인 기능이라, 그 전에 수집된 것들은
-    현안 열이 비어 있다. 여기서 다시 대조한다. 한 번만 쓰면 된다.
+    평소 수집은 게시판 1페이지(최신 10건)만 본다. 그래서 며칠치밖에 없다.
+    부서로 걸러 조회하면 고시가 드문 부서일수록 그 10건이 몇 년치가 된다.
+    한 번만 돌리면 된다.
     """
-    rows = list(load_existing().values())
-    if not rows:
-        print("누적 CSV가 없습니다.")
-        return
+    today = datetime.date.today().isoformat()
     agenda = load_agenda()
+    merged = load_existing()
+    print("기존 누적 {}건, 현안 {}건\n".format(len(merged), len(agenda)))
+
+    added = 0
+    for board, url in BOARDS:
+        for dept in sorted(WATCH_DEPTS):
+            seen_sig, got = None, 0
+            for page in range(1, max_pages + 1):
+                page_html = fetch_dept(url, dept, page)
+                if not page_html:
+                    break
+                rows = parse_rows(page_html)
+                sig = tuple(r["고시번호"] for r in rows)
+                if not rows or sig == seen_sig:
+                    break          # 페이지 넘김이 안 먹는다
+                seen_sig = sig
+                for r in rows:
+                    if not keep(r):
+                        continue
+                    r["게시판"] = board
+                    r["부서"] = r["부서"] or dept
+                    r["동탄관련"] = "O" if is_dongtan(r["제목"]) else ""
+                    r["현안"] = ", ".join(match_agenda(r["제목"], agenda))
+                    r["수집일"] = today
+                    key = (r["고시번호"], r["제목"])
+                    if key not in merged:
+                        added += 1
+                    merged[key] = r
+                    got += 1
+                time.sleep(1)
+            if got:
+                print("  {} / {} : {}건".format(board, dept, got))
+
+    print("\n수집 {}건 (신규 {}건, 누적 {}건)".format(
+        sum(1 for _ in merged), added, len(merged)))
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(OUT_CSV, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(sorted(merged.values(),
+                           key=lambda r: r.get("공고일자", ""), reverse=True))
+
+    rows = list(merged.values())
     for r in rows:
         r["현안"] = ", ".join(match_agenda(r.get("제목", ""), agenda))
     hit = [r for r in rows if r["현안"]]
-    print("누적 {}건 중 현안 관련 {}건".format(len(rows), len(hit)))
+    print("\n현안 관련 {}건".format(len(hit)))
     for r in sorted(hit, key=lambda r: r.get("공고일자", "")):
         print("  {} [{}] {}".format(
             r.get("공고일자", ""), r["현안"], r.get("제목", "")[:55]))
@@ -316,8 +390,8 @@ def backfill():
     changed = update_agenda(rows)
     print("\n[현안 단계 갱신] {}건".format(len(changed)))
     for name, stage, doubt in changed:
-        print("  {} → {}{}".format(
-            name, stage or "?", "  ⚠ " + doubt if doubt else ""))
+        print("  {} -> {}{}".format(
+            name, stage or "?", "  [확인필요] " + doubt if doubt else ""))
     if not changed:
         print("  갱신할 것이 없습니다. 키워드가 안 맞거나 관련 고시가 없습니다.")
 
