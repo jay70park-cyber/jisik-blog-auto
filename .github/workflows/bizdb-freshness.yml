@@ -1,0 +1,24 @@
+name: 업체DB 자료 갱신 점검
+
+on:
+  schedule:
+    # 매주 월요일 09:00 KST (UTC 00:00)
+    # 갱신할 게 없으면 스크립트가 알아서 발송을 건너뜁니다.
+    - cron: "0 0 * * 1"
+  workflow_dispatch:        # 수동 실행용
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 갱신 시점 점검
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/check_bizdb_freshness.py
