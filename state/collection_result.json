@@ -1,34 +1,97 @@
 {
-  "week_index": 0,
-  "track": "jisik",
-  "category": "개념_자격",
-  "category_display": "개념·입주자격",
+  "week_index": 2,
+  "track": "local",
+  "category": "지역이슈",
+  "category_display": "동탄 지역 개발 이슈",
   "period": {
-    "start": "2026-08-09",
-    "end": "2026-09-06"
+    "start": "2026-08-12",
+    "end": "2026-09-09"
   },
   "rows": [
     {
-      "keyword": "동탄 지식산업센터 조건",
-      "blog": 23138,
-      "cafe": 198400,
-      "trend": 0.0,
-      "score": 0.5
+      "keyword": "동탄 용인",
+      "blog": 1398017,
+      "cafe": 2658284,
+      "trend": 100.0,
+      "score": 0.897
     },
     {
-      "keyword": "동탄 지산 입주자격",
-      "blog": 1356,
-      "cafe": 198203,
-      "trend": 0.0,
-      "score": 0.217
+      "keyword": "동탄 동탄역",
+      "blog": 1238842,
+      "cafe": 1068621,
+      "trend": 100.0,
+      "score": 0.805
     },
     {
-      "keyword": "동탄 지식산업센터 입주업종",
-      "blog": 12177,
-      "cafe": 22562,
+      "keyword": "동탄 서울",
+      "blog": 1347925,
+      "cafe": 2023641,
+      "trend": 75.0,
+      "score": 0.738
+    },
+    {
+      "keyword": "동탄 신도시",
+      "blog": 865433,
+      "cafe": 5493600,
+      "trend": 17.54285,
+      "score": 0.473
+    },
+    {
+      "keyword": "동탄 임장",
+      "blog": 31799,
+      "cafe": 26060,
+      "trend": 70.0,
+      "score": 0.358
+    },
+    {
+      "keyword": "동탄 분양",
+      "blog": 517821,
+      "cafe": 2237043,
+      "trend": 27.5641,
+      "score": 0.33
+    },
+    {
+      "keyword": "동탄 부동산",
+      "blog": 687360,
+      "cafe": 1522868,
+      "trend": 24.22434,
+      "score": 0.324
+    },
+    {
+      "keyword": "동탄 삼성",
+      "blog": 482651,
+      "cafe": 550660,
+      "trend": 33.48837,
+      "score": 0.291
+    },
+    {
+      "keyword": "동탄 반도체",
+      "blog": 125514,
+      "cafe": 235796,
+      "trend": 36.66666,
+      "score": 0.219
+    },
+    {
+      "keyword": "동탄 집값",
+      "blog": 95174,
+      "cafe": 167926,
+      "trend": 25.42955,
+      "score": 0.154
+    },
+    {
+      "keyword": "동탄 고려대학교 병원",
+      "blog": 11175,
+      "cafe": 3090,
       "trend": 0.0,
-      "score": 0.181
+      "score": 0.003
+    },
+    {
+      "keyword": "동탄 성과급",
+      "blog": 10514,
+      "cafe": 3459,
+      "trend": 0.0,
+      "score": 0.002
     }
   ],
-  "top_keyword": "동탄 지식산업센터 조건"
+  "top_keyword": "동탄 서울"
 }
