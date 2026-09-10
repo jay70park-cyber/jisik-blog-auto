@@ -48,10 +48,41 @@ def _end_of_month(y, m):
 
 
 def _split_sentences(text):
-    """한국어 문장 분리. 완벽할 필요는 없고 날짜와 표지가 같이 묶이면 된다."""
-    text = re.sub(r"\s+", " ", text)
-    parts = re.split(r"(?<=다\.)\s|(?<=[.!?])\s|(?<=니다\.)\s", text)
-    return [p.strip() for p in parts if p.strip()]
+    """한국어 문장 분리.
+
+    마크다운 초안은 불릿과 표가 많아 공백만으로 이으면 여러 항목이
+    한 덩어리가 된다. 그러면 앞 불릿의 날짜와 뒤 불릿의 미래형 표지가
+    엮여 엉뚱한 오탐이 난다. 줄바꿈과 불릿을 문장 경계로 본다.
+    """
+    text = str(text)
+    # 표 행은 통째로 한 조각 (셀 구분자 | 로 날짜와 표지가 섞이는 것을 막는다)
+    chunks = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # 불릿·번호 기호를 경계로 한 번 더 쪼갠다
+        for piece in re.split(r"\s+(?=[-*•]\s)|\s+(?=\d+\.\s)", line):
+            piece = piece.strip()
+            if piece:
+                chunks.append(piece)
+
+    out = []
+    for c in chunks:
+        for p in re.split(r"(?<=다\.)\s|(?<=니다\.)\s|(?<=[.!?])\s", c):
+            p = p.strip()
+            if p:
+                out.append(p)
+    return out
+
+
+def _strip_quotes(sent):
+    """따옴표 안은 독자가 남에게 물어볼 예시 문장이므로 판정에서 뺀다.
+
+    예: 관리사무소에 "최근 공실이 몇 개월 만에 찼나요?" 라고 질문
+    여기의 '최근'은 기사 신선도 주장이 아니다.
+    """
+    return re.sub(r'["“”\'‘’「」『』]([^"“”\'‘’「」『』]{0,120})["“”\'‘’「」『』]', " ", sent)
 
 
 def _extract_dates(sent, today):
@@ -121,7 +152,8 @@ def check_dates(draft, today=None):
     today = today or date.today()
     stale, soon = [], []
 
-    for sent in _split_sentences(draft):
+    for raw in _split_sentences(draft):
+        sent = _strip_quotes(raw)          # 예시 질문문은 판정에서 뺀다
         markers = [w for w in FUTURE_MARKERS if w in sent]
         if not markers:
             continue
@@ -132,9 +164,9 @@ def check_dates(draft, today=None):
         for label, when in _extract_dates(sent, today):
             gap = (when - today).days
             if gap < 0:
-                stale.append((label, -gap, markers[0], sent))
+                stale.append((label, -gap, markers[0], raw))
             elif gap <= SOON_DAYS:
-                soon.append((label, gap, markers[0], sent))
+                soon.append((label, gap, markers[0], raw))
 
     out = []
     if stale:
@@ -235,10 +267,14 @@ def check_recency(draft, source_dates=None, today=None):
     """
     today = today or date.today()
     hits = []
-    for sent in _split_sentences(draft):
+    for raw in _split_sentences(draft):
+        sent = _strip_quotes(raw)
+        # 독자가 확인할 항목을 안내하는 줄은 기사 신선도 주장이 아니다
+        if re.match(r"^[-*•]?\s*(확인|확인할 것|확인 방법|질문|체크)", sent):
+            continue
         for w in RECENCY_WORDS:
             if w in sent:
-                hits.append((w, sent))
+                hits.append((w, raw))
                 break
 
     if not hits:
