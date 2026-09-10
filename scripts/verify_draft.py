@@ -18,6 +18,8 @@ import re
 import json
 import urllib.request
 import urllib.parse
+from datetime import date            # ← 추가
+from date_guard import check_dates, check_recency   # ← 추가
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -116,6 +118,9 @@ def check_mechanical(draft, plan):
         out.append(("표", "주의", "표가 없거나 너무 작습니다"))
     else:
         out.append(("표", "통과", "있음"))
+
+    out.extend(check_dates(draft))                       # ← 추가
+    out.extend(check_recency(draft, source_dates()))     # ← 추가
 
     return out
 
