@@ -250,9 +250,16 @@ def check_recency(draft, source_dates=None, today=None):
                  "신선도 표현 {}곳 — 근거 기사가 일주일 이내인지 확인하세요: {}"
                  .format(len(hits), note))]
 
-    newest = max(source_dates)
+    newest, oldest = max(source_dates), min(source_dates)
     age = (today - newest).days
     if age <= FRESH_DAYS:
+        spread = (newest - oldest).days
+        if spread > 30:
+            note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:2])
+            return [("기사 나이", "주의",
+                     "가장 새 근거는 {}일 전이지만 근거가 {}일에 걸쳐 있습니다. "
+                     "신선도 표현 {}곳이 오래된 사실을 가리키지 않는지 "
+                     "확인하세요: {}".format(age, spread, len(hits), note))]
         return [("기사 나이", "통과",
                  "가장 새 근거가 {}일 전 — 새 소식 톤 허용".format(age))]
 
