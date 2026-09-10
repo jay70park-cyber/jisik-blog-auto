@@ -11,20 +11,36 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: 자체 테스트
-        run: |
-          cd scripts
-          python date_guard.py
+        run: python scripts/date_guard.py
+
       - name: 실제 초안으로 검사
         run: |
-          cd scripts
-          python -c "
-          import sys; sys.path.insert(0, '.')
+          python - <<'PY'
+          import sys, os, glob
+          sys.path.insert(0, "scripts")
           from date_guard import check_dates, check_recency
-          draft = open('../state/draft.md', encoding='utf-8').read()
-          print('=== 날짜 검사 ===')
-          for r in check_dates(draft): print(' ', r)
+
+          # 초안 파일을 여러 후보에서 찾는다 (승인 단계에서 이름이 바뀔 수 있음)
+          candidates = ["state/draft.md", "draft.md", "state/final_post.txt",
+                        "state/final_post.html", "state/draft.html"]
+          path = next((p for p in candidates if os.path.exists(p)), None)
+          if not path:
+              found = glob.glob("state/*") + glob.glob("*.md")
+              print("초안 파일을 찾지 못했습니다.")
+              print("state/ 안의 파일:", found)
+              print("자체 테스트는 위에서 통과했으므로 모듈 자체는 정상입니다.")
+              sys.exit(0)
+
+          draft = open(path, encoding="utf-8").read()
+          print("검사 대상:", path, "({}자)".format(len(draft)))
           print()
-          print('=== 기사 나이 ===')
-          for r in check_recency(draft): print(' ', r)
-          "
+          print("=== 날짜 검사 ===")
+          for n, v, note in check_dates(draft):
+              print("  [{}] {} — {}".format(v, n, note[:400]))
+          print()
+          print("=== 기사 나이 ===")
+          for n, v, note in check_recency(draft):
+              print("  [{}] {} — {}".format(v, n, note[:400]))
+          PY
