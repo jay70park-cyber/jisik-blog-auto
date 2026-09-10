@@ -61,6 +61,72 @@ def load_text(path):
 # 1. 기계 검사
 # ─────────────────────────────────────────────
 
+def source_dates():
+    """collection_result.json 에서 근거 기사 발행일을 뽑는다.
+
+    구조를 모르므로 재귀로 훑으면서 날짜처럼 생긴 값을 모은다.
+    네이버 뉴스는 'Mon, 26 May 2026 07:50:00 +0900',
+    네이버 블로그는 '20260526' 형식이라 둘 다 받는다.
+    """
+    path = os.path.join(STATE_DIR, "collection_result.json")
+    if not os.path.exists(path):
+        return None
+
+    MONTHS = {m: i for i, m in enumerate(
+        ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+
+    def parse(v):
+        s = str(v).strip()
+        # Mon, 26 May 2026 07:50:00 +0900
+        m = re.search(r"(\d{1,2})\s+([A-Z][a-z]{2})\s+(20\d{2})", s)
+        if m and m.group(2) in MONTHS:
+            try:
+                return date(int(m.group(3)), MONTHS[m.group(2)], int(m.group(1)))
+            except ValueError:
+                return None
+        # 2026-05-26 / 2026.05.26 / 2026/05/26
+        m = re.search(r"(20\d{2})[-./](\d{1,2})[-./](\d{1,2})", s)
+        if m:
+            try:
+                return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                return None
+        # 20260526
+        m = re.fullmatch(r"(20\d{2})(\d{2})(\d{2})", s)
+        if m:
+            try:
+                return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                return None
+        return None
+
+    out = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if isinstance(v, (dict, list)):
+                    walk(v)
+                elif "date" in str(k).lower():      # pubDate, postdate, date ...
+                    d = parse(v)
+                    if d:
+                        out.append(d)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            walk(json.load(f))
+    except Exception:
+        return None
+
+    today = date.today()
+    # 미래 날짜나 10년 이전은 잘못 잡힌 값으로 본다
+    out = [d for d in out if (today - d).days >= 0 and (today - d).days < 3650]
+    return out or None
+
 def check_mechanical(draft, plan):
     """세어서 판정되는 것들. Claude를 부르지 않는다."""
     out = []
@@ -134,7 +200,9 @@ def build_verify_prompt(plan, draft):
     crit_text = "\n".join(
         "   {}. {}".format(i, c) for i, c in enumerate(criteria[:3], 1))
 
-    return """아래는 블로그 글의 [확정 기획안]과 그에 따라 작성된 [초안]입니다.
+    return """오늘은 {today}입니다. 이 날짜를 기준으로 판단하세요.
+
+아래는 블로그 글의 [확정 기획안]과 그에 따라 작성된 [초안]입니다.
 초안이 기획안대로 쓰였는지 검증해주세요.
 
 [확정 기획안]
@@ -169,6 +237,16 @@ def build_verify_prompt(plan, draft):
 
 6. 중복 — 같은 사실·수치·주장이 여러 섹션에서 표현만 바꿔 반복되지 않는가.
 
+7. 시점 정합성 — 오늘({today}) 기준으로 이미 지난 날짜를
+   "~할 예정", "~를 목표로", "~할 전망"처럼 미래형으로 쓴 곳이 없는가.
+   개통·준공·시행·입주 일정은 특히 주의해서 보세요.
+   당신의 학습 시점에는 미래였더라도 오늘 기준으로는 지났을 수 있습니다.
+   날짜가 나오면 반드시 오늘과 비교하세요.
+
+8. 기사 나이와 톤 — 근거로 든 기사가 일주일 이내인가.
+   오래된 기사인데 "최근", "이번 주", "알려졌다"처럼 새 소식인 양
+   쓰지 않았는가. 오래된 근거는 사실관계만 서술해야 합니다.
+
 아래 JSON 형식으로만 출력하세요. 다른 설명은 붙이지 마세요.
 
 {{
@@ -179,10 +257,13 @@ def build_verify_prompt(plan, draft):
     {{"name": "판단 기준 반영", "verdict": "...", "note": "..."}},
     {{"name": "문단별 정합성", "verdict": "...", "note": "..."}},
     {{"name": "중복", "verdict": "...", "note": "..."}}
+    {{"name": "시점 정합성", "verdict": "...", "note": "..."}},
+    {{"name": "기사 나이와 톤", "verdict": "...", "note": "..."}}
   ],
   "worst": "가장 시급하게 고쳐야 할 것 한 문장. 문제가 없으면 빈 문자열",
   "fix_request": "수정 요청으로 그대로 보낼 수 있는 문장. 문제가 없으면 빈 문자열"
 }}""".format(
+        today=date.today().strftime("%Y년 %m월 %d일"),   # ← 추가
         reader=plan.get("reader", "-"),
         output=plan.get("output_type", "-"),
         conclusion=plan.get("conclusion", "-"),
