@@ -1,0 +1,30 @@
+name: 날짜검사 테스트
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 자체 테스트
+        run: |
+          cd scripts
+          python date_guard.py
+      - name: 실제 초안으로 검사
+        run: |
+          cd scripts
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from date_guard import check_dates, check_recency
+          draft = open('../state/draft.md', encoding='utf-8').read()
+          print('=== 날짜 검사 ===')
+          for r in check_dates(draft): print(' ', r)
+          print()
+          print('=== 기사 나이 ===')
+          for r in check_recency(draft): print(' ', r)
+          "
