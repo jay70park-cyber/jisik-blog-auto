@@ -257,6 +257,17 @@ RECENCY_WORDS = [
 
 FRESH_DAYS = 7          # 이 안쪽이면 새 소식으로 다뤄도 된다
 
+# '최근'은 기간·상태를 가리키는 용법이 더 흔하다.
+# '최근 1년 상승률', '최근 공실 기간'은 기사 신선도 주장이 아니다.
+# 이런 말이 바로 뒤에 붙으면 신선도 표현으로 세지 않는다.
+_PERIOD_AFTER = (
+    r"\s*(\d+\s*(년|개월|달|주|일|분기|회|건|차)"
+    r"|[1-9]\d*년간|수년|몇\s*년"
+    # 앞에 한두 글자가 더 붙어도 인식한다 ('실거래', '월임대료' 등)
+    r"|[가-힣]{0,2}(공실|거래|시세|실적|추세|흐름|동향|임대료|매매가"
+    r"|낙찰|계약|입주|분양|기준|자료|데이터|통계|수치|가격))"
+)
+
 
 def check_recency(draft, source_dates=None, today=None):
     """근거 기사의 나이와 본문의 신선도 표현이 맞는지 본다.
@@ -273,9 +284,13 @@ def check_recency(draft, source_dates=None, today=None):
         if re.match(r"^[-*•]?\s*(확인|확인할 것|확인 방법|질문|체크)", sent):
             continue
         for w in RECENCY_WORDS:
-            if w in sent:
-                hits.append((w, raw))
-                break
+            if w not in sent:
+                continue
+            # '최근 1년', '최근 공실'처럼 기간·대상을 수식하는 용법은 제외
+            if re.search(re.escape(w) + _PERIOD_AFTER, sent):
+                continue
+            hits.append((w, raw))
+            break
 
     if not hits:
         return [("기사 나이", "통과", "신선도 표현 없음 — 사실관계 서술")]
