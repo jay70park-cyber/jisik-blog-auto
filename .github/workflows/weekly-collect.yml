@@ -130,3 +130,4 @@ jobs:
           git diff --cached --quiet || git commit -m "Update weekly draft state [skip ci]"
           git pull --rebase origin main || true
           git push || true
+          git pull --rebase origin main || true와 git push || true
