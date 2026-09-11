@@ -31,6 +31,7 @@ FUTURE_MARKERS = [
 
 # 이미 일어난 일을 서술하는 표지. 지난 날짜와 함께 있으면 정상이다.
 PAST_MARKERS = [
+    "당초", "원래", "기존", "애초", "처음에는", "본래",
     "개통했", "개통됐", "준공했", "준공됐", "시행됐", "시행했",
     "밝혔", "발표했", "着공했", "착공했", "입주했", "마쳤", "완료했", "완료됐",
     "였다", "이었다", "했다가", "됐다", "돼 있다", "된 바",
@@ -94,7 +95,7 @@ def _extract_dates(sent, today):
         y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if 1 <= mo <= 12 and 1 <= d <= 31:
             try:
-                found.append((m.group(0), date(y, mo, d)))
+                found.append((m.group(0), date(y, mo, d), m.start(), m.end()))
             except ValueError:
                 pass
 
@@ -102,43 +103,73 @@ def _extract_dates(sent, today):
     for m in re.finditer(r"(20\d{2})\s*년\s*(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)", sent):
         y, mo = int(m.group(1)), int(m.group(2))
         if 1 <= mo <= 12:
-            found.append((m.group(0), _end_of_month(y, mo)))
+            found.append((m.group(0), _end_of_month(y, mo), m.start(), m.end()))
 
     # 2026년 상반기 / 하반기 / 1분기
     for m in re.finditer(r"(20\d{2})\s*년\s*(상반기|하반기|([1-4])\s*분기)", sent):
         y = int(m.group(1))
         if m.group(3):
-            found.append((m.group(0), _end_of_month(y, int(m.group(3)) * 3)))
+            found.append((m.group(0), _end_of_month(y, int(m.group(3)) * 3), m.start(), m.end()))
         elif "상반기" in m.group(2):
-            found.append((m.group(0), _end_of_month(y, 6)))
+            found.append((m.group(0), _end_of_month(y, 6), m.start(), m.end()))
         else:
-            found.append((m.group(0), date(y, 12, 31)))
+            found.append((m.group(0), date(y, 12, 31), m.start(), m.end()))
 
     # 2026년 (월 없이 연도만)
     for m in re.finditer(r"(20\d{2})\s*년(?!\s*\d{1,2}\s*월)(?!\s*(상반기|하반기|[1-4]\s*분기))", sent):
         y = int(m.group(1))
-        found.append((m.group(0), date(y, 12, 31)))
+        found.append((m.group(0), date(y, 12, 31), m.start(), m.end()))
 
     # 올해 8월 / 내년 6월
     for m in re.finditer(r"(올해|금년|내년|명년)\s*(\d{1,2})\s*월", sent):
         y = today.year + (1 if m.group(1) in ("내년", "명년") else 0)
         mo = int(m.group(2))
         if 1 <= mo <= 12:
-            found.append((m.group(0), _end_of_month(y, mo)))
+            found.append((m.group(0), _end_of_month(y, mo), m.start(), m.end()))
 
     # 2026.8 / 2026-08
     for m in re.finditer(r"(20\d{2})[.\-](\d{1,2})(?![\d.\-])", sent):
         mo = int(m.group(2))
         if 1 <= mo <= 12:
-            found.append((m.group(0), _end_of_month(int(m.group(1)), mo)))
+            found.append((m.group(0), _end_of_month(int(m.group(1)), mo), m.start(), m.end()))
 
-    # 중복 제거 (같은 표기가 여러 규칙에 걸릴 수 있다)
-    seen, out = set(), []
-    for label, d in found:
-        key = (label.strip(), d)
-        if key not in seen:
-            seen.add(key)
-            out.append((label.strip(), d))
+    # 연도 없는 표기: '6월 27일', '7~8월', '8월 말'
+    # 연도를 안 쓰면 올해를 가리키는 것이 보통이다. 다만 이미 넉 달 넘게
+    # 지난 달이면 내년을 뜻할 가능성이 커서 판정에서 뺀다.
+    def _bare(mo, day, label, st, en):
+        when = date(today.year, mo, day) if day else _end_of_month(today.year, mo)
+        if (today - when).days > 120:      # 너무 오래 지났으면 내년으로 본다
+            return
+        found.append((label, when, st, en))
+
+    for m in re.finditer(r"(?<![0-9년])(\d{1,2})\s*월\s*(\d{1,2})\s*일", sent):
+        mo, d = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            try:
+                _bare(mo, d, m.group(0), m.start(), m.end())
+            except ValueError:
+                pass
+
+    # '7~8월' 은 뒤쪽 달을 기준으로 본다
+    for m in re.finditer(r"(?<![0-9년])(\d{1,2})\s*[~\-]\s*(\d{1,2})\s*월", sent):
+        mo = int(m.group(2))
+        if 1 <= mo <= 12:
+            _bare(mo, None, m.group(0), m.start(), m.end())
+
+    # 단독 '8월' (앞에 연도나 숫자가 없고, 일자도 따라붙지 않는 경우)
+    for m in re.finditer(r"(?<![0-9년~\-])(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)", sent):
+        mo = int(m.group(1))
+        if 1 <= mo <= 12:
+            _bare(mo, None, m.group(0), m.start(), m.end())
+
+    # 겹치는 구간 제거 (같은 자리가 여러 규칙에 걸릴 수 있다)
+    found.sort(key=lambda x: (x[2], -(x[3] - x[2])))
+    out, taken = [], []
+    for label, d, st, en in found:
+        if any(st < e and en > s2 for s2, e in taken):
+            continue
+        taken.append((st, en))
+        out.append((label.strip(), d, st, en))
     return out
 
 
@@ -154,14 +185,24 @@ def check_dates(draft, today=None):
 
     for raw in _split_sentences(draft):
         sent = _strip_quotes(raw)          # 예시 질문문은 판정에서 뺀다
-        markers = [w for w in FUTURE_MARKERS if w in sent]
-        if not markers:
-            continue
-        # 과거 서술이 함께 있으면 이미 일어난 일을 적은 것이다
-        if any(w in sent for w in PAST_MARKERS):
+        if not any(w in sent for w in FUTURE_MARKERS):
             continue
 
-        for label, when in _extract_dates(sent, today):
+        dates = _extract_dates(sent, today)
+        for i, (label, when, st, en) in enumerate(dates):
+            # 한 문장에 날짜가 여럿이면 표지가 어느 날짜에 걸리는지 가려야 한다.
+            # 이 날짜 뒤부터 다음 날짜 앞까지가 그 날짜의 서술 구간이다.
+            nxt = dates[i + 1][2] if i + 1 < len(dates) else len(sent)
+            after = sent[en:nxt]
+            prev = dates[i - 1][3] if i > 0 else 0
+            before = sent[prev:st]
+
+            markers = [w for w in FUTURE_MARKERS if w in after]
+            if not markers:
+                continue
+            if any(w in before + after for w in PAST_MARKERS):
+                continue
+
             gap = (when - today).days
             if gap < 0:
                 stale.append((label, -gap, markers[0], raw))
