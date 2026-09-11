@@ -185,11 +185,16 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
     calc_block = ""
     if calc_tab and calc_tab != "없음" and calc_url:
+        tab_url = calc_url
+        if not calc_url.endswith("/"):
+            tab_url += "/"
+        tab_url += "?tab=" + urllib.parse.quote(calc_tab)
+
         calc_block = f"""
 6. **"내 경우 계산해보기" 섹션 (필수)**: 독자가 자기 숫자를 넣어볼 수 있도록 계산기를 안내하세요.
-   - 계산기 주소: {calc_url}
-   - 이 글에서 연결할 탭: "{calc_tab}"
-   - 마크다운 링크로 넣으세요. 예: [실투자금 계산기에서 내 숫자로 확인하기]({calc_url})
+   - 계산기 주소: {tab_url}
+   - 이 주소는 '{calc_tab}' 탭이 바로 열리는 링크입니다. 주소를 고치지 마세요.
+   - 마크다운 링크로 넣으세요. 예: [{calc_tab} 계산기에서 내 숫자로 확인하기]({tab_url})
    - 링크 앞에 어떤 값을 넣으면 무엇을 알 수 있는지 한 줄로 안내하세요.
    - 계산기 결과는 참고용이며 실제 조건은 다를 수 있다는 점을 한 문장으로 덧붙이세요."""
 
