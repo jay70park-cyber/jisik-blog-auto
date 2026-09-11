@@ -4,91 +4,91 @@
   "category": "지역이슈",
   "category_display": "동탄 지역 개발 이슈",
   "period": {
-    "start": "2026-08-12",
-    "end": "2026-09-09"
+    "start": "2026-08-14",
+    "end": "2026-09-11"
   },
   "rows": [
     {
       "keyword": "동탄 용인",
-      "blog": 1398017,
-      "cafe": 2658284,
+      "blog": 1400562,
+      "cafe": 2661362,
       "trend": 100.0,
       "score": 0.897
     },
     {
       "keyword": "동탄 동탄역",
-      "blog": 1238842,
-      "cafe": 1068621,
+      "blog": 1240672,
+      "cafe": 1071783,
       "trend": 100.0,
       "score": 0.805
     },
     {
       "keyword": "동탄 서울",
-      "blog": 1347925,
-      "cafe": 2023641,
+      "blog": 1350045,
+      "cafe": 2027608,
       "trend": 75.0,
       "score": 0.738
     },
     {
       "keyword": "동탄 신도시",
-      "blog": 865433,
-      "cafe": 5493600,
-      "trend": 17.54285,
-      "score": 0.473
+      "blog": 866990,
+      "cafe": 5496688,
+      "trend": 33.54285,
+      "score": 0.553
+    },
+    {
+      "keyword": "동탄 삼성",
+      "blog": 483527,
+      "cafe": 551456,
+      "trend": 61.86046,
+      "score": 0.433
+    },
+    {
+      "keyword": "동탄 분양",
+      "blog": 518828,
+      "cafe": 2239083,
+      "trend": 45.78754,
+      "score": 0.422
+    },
+    {
+      "keyword": "동탄 부동산",
+      "blog": 688626,
+      "cafe": 1524390,
+      "trend": 43.67541,
+      "score": 0.421
     },
     {
       "keyword": "동탄 임장",
-      "blog": 31799,
-      "cafe": 26060,
+      "blog": 31827,
+      "cafe": 26125,
       "trend": 70.0,
       "score": 0.358
     },
     {
-      "keyword": "동탄 분양",
-      "blog": 517821,
-      "cafe": 2237043,
-      "trend": 27.5641,
-      "score": 0.33
-    },
-    {
-      "keyword": "동탄 부동산",
-      "blog": 687360,
-      "cafe": 1522868,
-      "trend": 24.22434,
-      "score": 0.324
-    },
-    {
-      "keyword": "동탄 삼성",
-      "blog": 482651,
-      "cafe": 550660,
-      "trend": 33.48837,
-      "score": 0.291
-    },
-    {
       "keyword": "동탄 반도체",
-      "blog": 125514,
-      "cafe": 235796,
-      "trend": 36.66666,
-      "score": 0.219
+      "blog": 125853,
+      "cafe": 235926,
+      "trend": 53.33333,
+      "score": 0.302
     },
     {
       "keyword": "동탄 집값",
-      "blog": 95174,
-      "cafe": 167926,
-      "trend": 25.42955,
-      "score": 0.154
+      "blog": 95479,
+      "cafe": 168154,
+      "trend": 46.5063,
+      "score": 0.259
     },
     {
       "keyword": "동탄 고려대학교 병원",
-      "blog": 11175,
-      "cafe": 3090,
+      "blog": 11189,
+      "cafe": 3097,
       "trend": 0.0,
       "score": 0.003
     },
     {
       "keyword": "동탄 성과급",
-      "blog": 10514,
-      "cafe": 3459,
+      "blog": 10556,
+      "cafe": 3468,
       "trend": 0.0,
       "score": 0.002
     }
