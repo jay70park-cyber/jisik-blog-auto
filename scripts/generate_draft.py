@@ -53,8 +53,14 @@ def fetch_reference_links(keyword, count=6, timeout=15):
         print("참고 링크 검색 오류: " + str(e))
         return []
 
-    # 제목에 이 중 하나라도 있어야 관련 글로 인정한다
-    must_have = ["동탄", "지식산업센터", "지산", "화성"]
+    # 제목에 지역명이 없으면 우리 독자와 무관한 글이다.
+    # "지식산업센터"만으로는 마곡·성수 분양 홍보 글이 통과한다.
+    must_have = ["동탄", "화성", "기흥", "용인"]
+
+    # 분양 홍보 블로그가 상위에 많이 걸린다. 독자에게 도움이 안 되고
+    # 남의 영업 글로 내보내는 셈이라 제외한다.
+    exclude = ["분양안내", "분양개시", "홍보관", "모델하우스",
+               "분양문의", "선착순", "특별분양", "미분양", "잔여세대"]
 
     refs = []
     dropped = 0
@@ -62,14 +68,26 @@ def fetch_reference_links(keyword, count=6, timeout=15):
         title = it.get("title", "").replace("<b>", "").replace("</b>", "")
         title = title.replace("&amp;", "&").replace("&quot;", '"').strip()
         link = it.get("link", "")
+        if any(w in title for w in exclude):
+            dropped += 1
+            continue
         if not any(w in title for w in must_have):
             dropped += 1
             continue
         refs.append({"title": title, "link": link})
 
-    print("참고 링크: {}건 채택, {}건 제외".format(len(refs), dropped))
-    return refs[:3]
+    seen_domain = set()
+    out = []
+    for r in refs:
+        m = re.search(r"https?://([^/]+)", r["link"])
+        dom = m.group(1) if m else r["link"]
+        if dom in seen_domain:
+            continue
+        seen_domain.add(dom)
+        out.append(r)
 
+    print("참고 링크: {}건 채택, {}건 제외".format(len(out), dropped))
+    return out[:3]
 
 def call_claude_with_search(prompt, timeout=480):
     """웹 검색 도구를 활성화해 Claude API를 호출한다."""
