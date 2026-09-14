@@ -34,7 +34,7 @@ def load(path):
         return []
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f))
-
+        
 
 def send_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -89,7 +89,7 @@ def main():
     if marked_any:
         lines.append("  글감 채택 " + rate(len(picked_recent), len(recent)))
     else:
-        lines.append("  글감 표시 없음 — csv '글감' 열에 O 를 적어주세요")
+        lines.append("  글감 표시 없음 — data/hscity_notices.csv 의 '글감' 열에 아무 표시나 적으세요")
 
     top = collections.Counter(r.get("부서", "") for r in recent).most_common(5)
     if top:
@@ -113,11 +113,15 @@ def main():
     if doubt or blank:
         lines.append("")
         lines.append("현안 목록 손볼 것")
+        lines.append("  (data/local_agenda.csv 를 열어 직접 채우세요.")
+        lines.append("   텔레그램 답장으로는 반영되지 않습니다)")
+        lines.append("  단계: 계획 / 심의중 / 인가 / 실시설계 / 착공 / 준공")
         for a in doubt:
-            lines.append("  {} — {}".format(a.get("현안명", ""),
-                                            a.get("확인필요", "")))
+            lines.append("  · {} — {}".format(a.get("현안명", ""),
+                                              a.get("확인필요", "")))
         for a in blank:
-            lines.append("  {} — 단계 비어 있음".format(a.get("현안명", "")))
+            lines.append("  · {} — 단계 비어 있음".format(a.get("현안명", "")))
+        lines.append("  단계: 계획 / 심의중 / 인가 / 실시설계 / 착공 / 준공")
 
     lines.append("")
     if week >= TRIAL_WEEKS:
