@@ -25,9 +25,7 @@ NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-
 MODEL = "claude-sonnet-5"
-
 
 def fetch_reference_links(keyword, count=6, timeout=15):
     """대표 키워드로 네이버 블로그를 검색해 제목+링크를 가져온다.
