@@ -23,6 +23,7 @@ jobs:
       LANG: C.UTF-8
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +34,10 @@ jobs:
           else
             python3 scripts/collect_hscity.py
           fi
+
+      - name: Collect council minutes
+        if: github.event.inputs.backfill != 'true'
+        run: python3 scripts/collect_council.py
 
       - name: Commit notices
         if: always()
