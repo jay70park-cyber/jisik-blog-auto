@@ -131,3 +131,6 @@ jobs:
           git pull --rebase origin main || true
           git push || true          git push || true
           git pull --rebase origin main || true와 git push || true
+
+      - name: Collect council minutes
+        run: python3 scripts/collect_council.py       
