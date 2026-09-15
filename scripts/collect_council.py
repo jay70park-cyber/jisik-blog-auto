@@ -47,7 +47,10 @@ EXTRA_WORDS = [
 ]
 
 FIELDS = ["schSn", "회수", "차수", "회의명", "회의일",
-          "현안", "적중어", "링크", "수집일"]
+          "현안", "적중어", "글감", "링크", "수집일"]
+
+# 사람이 손으로 적는 열. 다시 수집해도 덮어쓰면 안 된다.
+MANUAL_FIELDS = ["글감"]
 
 MAX_EXCERPT = 3      # 회의록 하나에서 보낼 발췌 수
 CONTEXT = 120        # 적중어 앞뒤로 잘라낼 글자 수
@@ -264,6 +267,8 @@ def main():
         m["현안"] = ", ".join(issues)
         m["적중어"] = ", ".join(words)
         m["수집일"] = today
+        for c in MANUAL_FIELDS:
+            m.setdefault(c, "")
         seen[m["schSn"]] = m
 
         mark = "◆" if issues else ("★" if words else "·")
