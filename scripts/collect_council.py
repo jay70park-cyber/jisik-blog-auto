@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+"""
+화성특례시의회 회의록 수집
+
+고시는 행정이 '확정된 것'을 공고하는 문서다.
+회의록은 그 전에 오간 말이다. 왜 늦어지는지, 얼마가 모자라는지,
+누가 무엇을 따졌는지가 남는다. 고시에는 절대 안 실리는 내용이다.
+
+실제로 2026-09-03 도시건설위원회 회의록에는 트램 공사가 6차까지
+유찰됐고 공사비를 720억 증액해 겨우 성사시켰다는 답변이 있다.
+이런 건 공고문으로 나올 일이 없다.
+
+구조 (2026-09 실측)
+- 목록도 본문도 GET 으로 서버 렌더링된다. CSRFToken 은 없어도 된다.
+- 목록 1페이지 15건이면 충분하다. 회의는 회기 중에만 열린다.
+- 본문 링크는 mntsViewer.php?schSn=7717 형태고 이 번호가 식별자다.
+- 회의록은 회의 후 1~2주 지나 올라온다. 그래도 고시보다는 빠르다.
+
+현안 키워드에 걸린 회의록만 알리고, 걸린 대목의 앞뒤를 잘라 보낸다.
+링크를 눌러 5만 자를 읽게 만들면 아무도 안 읽는다.
+"""
+import os
+import re
+import csv
+import html
+import time
+import datetime
+import urllib.parse
+import urllib.request
+
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+DATA_DIR = "data"
+OUT_CSV = os.path.join(DATA_DIR, "council_minutes.csv")
+AGENDA_CSV = os.path.join(DATA_DIR, "local_agenda.csv")
+
+LIST_URL = ("https://council.hscity.go.kr/cnts/mnt/mntsList.php"
+            "?bbsCd=mnt&bbsSubCd=mnt01")
+VIEW_URL = "https://council.hscity.go.kr/cnts/mnt/mntsViewer.php?schSn="
+
+# 현안 키워드에 안 걸려도 이 말이 있으면 발췌한다.
+# 지역 현안이 처음 등장할 때는 아직 이름이 없기 때문이다.
+EXTRA_WORDS = [
+    "동탄", "지식산업센터", "산업단지", "지구단위계획",
+    "용도변경", "역세권", "유찰", "지방채",
+]
+
+FIELDS = ["schSn", "회수", "차수", "회의명", "회의일",
+          "현안", "적중어", "링크", "수집일"]
+
+MAX_EXCERPT = 3      # 회의록 하나에서 보낼 발췌 수
+CONTEXT = 120        # 적중어 앞뒤로 잘라낼 글자 수
+
+
+def fetch(url, timeout=40, retries=3):
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/120.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "ko-KR,ko;q=0.9",
+            })
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                return res.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            print("  조회 실패 ({}/{}): {}".format(attempt, retries, e))
+            if attempt < retries:
+                time.sleep(attempt * 3)
+    return ""
+
+
+def strip_tags(s):
+    s = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", s or "")
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", html.unescape(s)).strip()
+
+
+def parse_list(page_html):
+    """목록 표에서 회의 한 건씩 뽑는다.
+
+    열은 연번, 회수, 차수, 회의명, 회의일 순서다.
+    회의명 칸의 링크에 schSn 이 들어 있다.
+    """
+    rows = []
+    for m in re.finditer(r"<tr[^>]*>(.*?)</tr>", page_html, re.S | re.I):
+        block = m.group(1)
+        sn = re.search(r"schSn=(\d+)", block)
+        if not sn:
+            continue
+        tds = [strip_tags(t) for t in
+               re.findall(r"<td[^>]*>(.*?)</td>", block, re.S | re.I)]
+        if len(tds) < 5:
+            continue
+        rows.append({
+            "schSn": sn.group(1),
+            "회수": tds[1],
+            "차수": tds[2],
+            "회의명": tds[3],
+            "회의일": re.sub(r"[^\d.]", "", tds[4]).strip(".").replace(".", "-"),
+            "링크": VIEW_URL + sn.group(1),
+        })
+    return rows
+
+
+def load_agenda():
+    if not os.path.exists(AGENDA_CSV):
+        return []
+    out = []
+    with open(AGENDA_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            name = (r.get("현안명") or "").strip()
+            words = [w.strip() for w in (r.get("키워드") or "").split("|")
+                     if w.strip()]
+            if name and words:
+                out.append((name, words))
+    return out
+
+
+def find_hits(text, agenda):
+    """현안 키워드와 보조 키워드가 본문 어디에 나오는지 찾는다."""
+    issues, words = [], []
+    for name, keys in agenda:
+        for k in keys:
+            if k in text:
+                if name not in issues:
+                    issues.append(name)
+                if k not in words:
+                    words.append(k)
+    for w in EXTRA_WORDS:
+        if w in text and w not in words:
+            words.append(w)
+    return issues, words
+
+
+def excerpts(text, words):
+    """적중어 주변을 잘라낸다.
+
+    회의록은 5만 자가 넘는다. 링크만 던지면 안 읽는다.
+    걸린 대목만 보여주고 더 볼지는 사람이 정하게 한다.
+    """
+    spans = []
+    for w in words:
+        for m in re.finditer(re.escape(w), text):
+            spans.append((max(0, m.start() - CONTEXT),
+                          min(len(text), m.end() + CONTEXT)))
+            break                       # 같은 단어는 첫 등장만
+    spans.sort()
+
+    merged = []
+    for s, e in spans:
+        if merged and s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+    return ["…" + text[s:e].strip() + "…" for s, e in merged[:MAX_EXCERPT]]
+
+
+def load_existing():
+    if not os.path.exists(OUT_CSV):
+        return {}
+    with open(OUT_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        return {r["schSn"]: r for r in csv.DictReader(f)}
+
+
+def send_telegram(text):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("(텔레그램 설정이 없어 전송을 건너뜁니다)")
+        return
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
+    body = urllib.parse.urlencode({
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text[:3900],
+        "disable_web_page_preview": "true",
+    }).encode("utf-8")
+    try:
+        with urllib.request.urlopen(
+                urllib.request.Request(url, data=body, method="POST"),
+                timeout=20) as res:
+            res.read()
+    except Exception as e:
+        print("텔레그램 전송 오류: " + str(e))
+
+
+def main():
+    today = datetime.date.today().isoformat()
+    agenda = load_agenda()
+    seen = load_existing()
+    print("기존 {}건, 현안 {}건".format(len(seen), len(agenda)))
+
+    page = fetch(LIST_URL)
+    if not page:
+        print("목록 조회 실패. 의회 홈페이지 접근이 막혔습니다.")
+        raise SystemExit(1)
+
+    meetings = parse_list(page)
+    print("목록 {}건".format(len(meetings)))
+    if not meetings:
+        print("표를 못 읽었습니다. 화면 구조가 바뀌었을 수 있습니다.")
+        print(page[:1200])
+        raise SystemExit(1)
+
+    fresh = [m for m in meetings if m["schSn"] not in seen]
+    print("새 회의록 {}건".format(len(fresh)))
+
+    blocks = []
+    for m in fresh:
+        body = fetch(m["링크"])
+        time.sleep(1)
+        if not body:
+            continue
+        text = strip_tags(body)
+        issues, words = find_hits(text, agenda)
+        m["현안"] = ", ".join(issues)
+        m["적중어"] = ", ".join(words)
+        m["수집일"] = today
+        seen[m["schSn"]] = m
+
+        mark = "◆" if issues else ("★" if words else "·")
+        print("  {} {} {} | 적중 {}".format(
+            mark, m["회의일"], m["회의명"], m["적중어"] or "없음"))
+        if not words:
+            continue
+
+        lines = ["{} {} {} {}".format(
+            mark, m["회의일"], m["회의명"], m["차수"])]
+        if issues:
+            lines.append("현안: " + m["현안"])
+        lines += excerpts(text, words)
+        lines.append(m["링크"])
+        blocks.append((bool(issues), "\n".join(lines)))
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(OUT_CSV, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(sorted(seen.values(),
+                           key=lambda r: r.get("회의일", ""), reverse=True))
+    print("\n저장 {} (누적 {}건)".format(OUT_CSV, len(seen)))
+
+    if not blocks:
+        print("알릴 것이 없습니다.")
+        return
+
+    blocks.sort(key=lambda b: not b[0])
+    text = "\n\n".join(["[화성시의회 회의록] " + today]
+                       + [b[1] for b in blocks[:4]])
+    print()
+    print(text)
+    send_telegram(text)
+
+
+if __name__ == "__main__":
+    main()
