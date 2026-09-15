@@ -25,8 +25,12 @@ import csv
 import html
 import time
 import datetime
+import json
 import urllib.parse
 import urllib.request
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+SUMMARY_MODEL = "claude-haiku-4-5"
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -47,7 +51,7 @@ EXTRA_WORDS = [
 ]
 
 FIELDS = ["schSn", "회수", "차수", "회의명", "회의일",
-          "현안", "적중어", "글감", "링크", "수집일"]
+          "현안", "적중어", "요약", "글감", "링크", "수집일"]
 
 # 사람이 손으로 적는 열. 다시 수집해도 덮어쓰면 안 된다.
 MANUAL_FIELDS = ["글감"]
@@ -209,6 +213,59 @@ def excerpts(text, words):
     return ["…" + text[a:b].strip() + "…" for _, a, b in picked]
 
 
+SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
+
+이 회의록에서 동탄·화성 부동산과 지역 개발에 관련된 논의만 뽑아
+3~5줄로 요약하라. 각 줄은 사실 하나씩, 한 줄에 60자 안팎.
+
+- 금액, 일정, 공정률, 찬반 같은 구체적인 숫자를 반드시 포함할 것
+- 사업이 지연·유찰·감액·무산된 이유가 나오면 우선적으로 담을 것
+- 결론이 안 난 사안은 무엇이 미정인지 밝힐 것
+- 인사말, 절차 진행, 일반 행정, 복지·환경미화 등은 제외
+- 부동산·개발과 관련된 논의가 없으면 "없음" 한 단어만 출력
+
+줄머리에 기호나 번호를 붙이지 말고 줄바꿈으로만 구분하라.
+
+회의록:
+"""
+
+
+def summarize(text, timeout=120):
+    """회의록을 요약한다.
+
+    회의록은 발언이 오가는 형식이라 발췌로는 한계가 뚜렷하다.
+    "증액을 했습니다 / 증액을 더 하셔서? / 네." 같은 대목을
+    그대로 보내봐야 읽히지 않는다.
+
+    요약이 잡음 필터 역할도 한다. 키워드는 걸렸지만 실제로는
+    폐기물이나 청소 용역 이야기였다면 "없음"이 돌아오고,
+    그러면 알리지 않는다.
+    """
+    if not ANTHROPIC_API_KEY:
+        return ""
+    body = json.dumps({
+        "model": SUMMARY_MODEL,
+        "max_tokens": 700,
+        "messages": [{"role": "user",
+                      "content": SUMMARY_PROMPT + text[:150000]}],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=body, headers={
+            "content-type": "application/json",
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+        })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.loads(res.read().decode("utf-8"))
+        out = "".join(b.get("text", "") for b in data.get("content", [])
+                      if b.get("type") == "text").strip()
+        return "" if out.replace(".", "").strip() == "없음" else out
+    except Exception as e:
+        print("    요약 실패: {}".format(e))
+        return None          # None = 실패, "" = 관련 없음
+
+
 def load_existing():
     if not os.path.exists(OUT_CSV):
         return {}
@@ -277,11 +334,22 @@ def main():
         if not words:
             continue
 
+        summary = summarize(text)
+        if summary == "":
+            print("     → 부동산 관련 논의 없음, 알리지 않음")
+            m["요약"] = "없음"
+            continue
+
         lines = ["{} {} {} {}".format(
             mark, m["회의일"], m["회의명"], m["차수"])]
         if issues:
             lines.append("현안: " + m["현안"])
-        lines += excerpts(text, words)
+        if summary:
+            lines.append(summary)
+            m["요약"] = summary[:300]
+        else:
+            # 요약이 실패하면 예전처럼 발췌를 보낸다. 알림을 거르지는 않는다.
+            lines += excerpts(text, words)
         lines.append(m["링크"])
         blocks.append((bool(issues), "\n".join(lines)))
 
