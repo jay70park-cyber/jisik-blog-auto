@@ -252,8 +252,15 @@ SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
                 "stage": "계획|심의 전|결정|착공준비|보상·수용|공사중|준공|모름",
                 "confident": true}}]}}
 
-summary 는 3~5줄. 담을 논의가 없으면 빈 배열.
+summary 는 최대 5줄. 줄 수를 채우려 하지 마라.
+담을 것이 두 줄뿐이면 두 줄만 쓰고, 하나도 없으면 빈 배열로 둔다.
+빈 배열은 올바른 답이다. 억지로 채운 요약보다 낫다.
+
 updates 는 위 현안 목록에 있는 것만. 이름을 그대로 쓴다.
+그 현안이 회의록에서 실제로 거론되었을 때만 넣는다.
+비슷한 주제가 나왔다는 이유로 넣지 마라.
+예를 들어 다른 철도 이야기가 나왔다고 GTX-A 를 넣으면 안 되고,
+보건 예산이 나왔다고 병원 건립을 넣으면 안 된다.
 해당 현안 논의가 없으면 빈 배열.
 
 stage 는 회의록에서 그 사업이 지금 어느 단계인지다.
@@ -312,7 +319,7 @@ def summarize(text, agenda, timeout=120):
         return None
 
 
-def apply_updates(updates, meeting):
+def apply_updates(updates, meeting, text="", agenda=None):
     """회의록에서 읽은 진전을 현안 목록에 반영한다.
 
     고시와 같은 칸을 쓰므로 날짜가 더 최신일 때만 덮는다.
@@ -329,9 +336,19 @@ def apply_updates(updates, meeting):
         if c not in cols:
             cols.append(c)
 
+    # 모델이 회의록에 없는 현안을 넣는 일이 있다.
+    # 농업 예산 회의록에 병원 건립이 붙는 식이다.
+    # 그래서 그 현안의 키워드가 원문에 실제로 있는지 직접 확인한다.
+    keys = {n: ws for n, ws, _ in (agenda or [])}
+
     date = meeting.get("회의일", "")
     changed = []
     for u in updates:
+        if text and keys:
+            ws = keys.get(u["issue"].strip())
+            if not ws or not any(w in text for w in ws):
+                print("     × 갱신 버림: {} (원문에 없음)".format(u["issue"]))
+                continue
         row = next((r for r in rows
                     if (r.get("현안명") or "").strip() == u["issue"].strip()),
                    None)
@@ -431,6 +448,13 @@ def main():
         if not words:
             continue
 
+        if not issues:
+            # 현안이 하나도 안 걸린 회의록은 요약하지 않는다.
+            # '동탄' 같은 지명만으로 걸린 농정·복지 회의록에
+            # 요약 비용을 쓸 이유가 없다.
+            print("     · 현안 미적중, 요약 생략")
+            continue
+
         result = summarize(text, agenda)
         if result is None:
             # 요약이 실패하면 예전처럼 발췌를 보낸다. 알림을 거르지는 않는다.
@@ -450,7 +474,7 @@ def main():
             continue
 
         m["요약"] = " / ".join(summary)[:300]
-        changed = apply_updates(updates, m)
+        changed = apply_updates(updates, m, text, agenda)
         for name, stage, note in changed:
             print("     → 현안 갱신: {} ({}) {}".format(name, stage, note))
 
