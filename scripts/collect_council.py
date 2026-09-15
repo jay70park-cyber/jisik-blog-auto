@@ -87,7 +87,14 @@ def body_only(text):
     개의 선언 이후가 실제 회의다.
     """
     m = re.search(r"\(\s*\d{1,2}시\s*\d{1,2}분\s*개의\s*\)", text)
-    return text[m.end():] if m else text
+    if m:
+        text = text[m.end():]
+    # 끝의 출석 명단에는 부서장 직함이 줄줄이 나온다.
+    # '트램건설추진단장'이 명단에 있다는 이유로 트램 논의로 잡히면 곤란하다.
+    tail = re.search(r"○\s*출석\s*(위원|공무원|전문위원)", text)
+    if tail:
+        text = text[:tail.start()]
+    return text
 
 
 def parse_list(page_html):
@@ -148,6 +155,7 @@ def find_hits(text, agenda):
 
 
 def score(window, words):
+    # 산회 선포 뒤는 명단이다. 걸려도 내용이 없다.
     """이 대목이 읽을 가치가 있는지 점수를 매긴다.
 
     같은 단어라도 목차에 있는 것과 질의답변에 있는 것은 값이 다르다.
@@ -161,6 +169,12 @@ def score(window, words):
     pts += 2 * len(re.findall(r"○", window))   # 발언 주고받는 대목
     if re.search(r"의사일정|안건보기|맨위로|회 의 록|선택취소", window):
         pts -= 8                       # 목차·머리말
+    if re.search(r"산회를 선포|출석위원|출석공무원", window):
+        pts -= 8                       # 회의 끝의 명단
+    # 스쳐 지나간 언급과 실제 논의를 가른다.
+    # 그 사안을 다루는 대목이라면 같은 말이 여러 번 나온다.
+    if not any(len(re.findall(re.escape(w), window)) >= 2 for w in words):
+        pts -= 2
     return pts
 
 
