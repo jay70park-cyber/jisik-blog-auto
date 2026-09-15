@@ -9,13 +9,22 @@
   - 핵심 결론 (한 문장)
   - 판단 기준 3가지
   - 연결할 계산기 탭
+
+트랙에 따라 위 항목의 성격이 달라진다.
+지산·상가·경매는 독자의 의사결정을 돕는 글이고,
+지역 개발·시의회 회의록은 독자가 몰랐던 것을 알려주는 글이다.
+후자에 "그래서 무엇을 해야 한다"를 요구하면 경고문이 되어 버린다.
+그래서 트랙별 규칙은 content_rules.py 한 곳에서 가져다 쓴다.
 """
 import os
+import csv
 import json
 import time
 import datetime
 import urllib.request
 import urllib.parse
+
+import content_rules as cr
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -25,6 +34,7 @@ MODEL = "claude-sonnet-5"
 STATE_DIR = "state"
 PLAN_FILE = os.path.join(STATE_DIR, "plan.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "plan_history.json")
+COUNCIL_CSV = os.path.join("data", "council_minutes.csv")
 
 CALC_URL = os.environ.get("CALC_URL", "https://jay70park-cyber.github.io/jisik-calc/")
 
@@ -32,14 +42,26 @@ WAIT_SECONDS = int(os.environ.get("PLAN_WAIT_SECONDS", "300"))  # 5분
 POLL_INTERVAL = 20
 MAX_REVISIONS = 2
 
+# ── 트랙별 독자 후보 ────────────────────────────
+# 지역 개발 글의 독자를 '투자자'로 두면 글이 매수 판단으로 흘러간다.
+# 이 글의 독자는 이미 여기서 일하거나 살거나 사업을 준비하는 사람이다.
 READERS = ["임대수익 목적 투자자", "실사용 매수자", "실사용 임차인"]
-OUTPUT_TYPES = [
-    "① 계산 공식 — 내 숫자를 대입해 답을 내는 법",
-    "② 합격/불합격 기준 — 걸러야 할 물건 판별법",
-    "③ A vs B 선택표 — 상황별 어느 쪽이 유리한지",
-    "④ 위험 신호 목록 — 계약 전 돌아서야 할 징후",
-    "⑤ 순서 안내 — 그대로 따라 하는 절차",
-]
+READERS_BY_TRACK = {
+    "local": [
+        "동탄에서 사업장을 찾고 있는 사업주",
+        "동탄에 이미 자리 잡은 사업주",
+        "동탄에 살면서 이 동네 변화가 궁금한 사람",
+    ],
+    "council": [
+        "동탄에서 사업장을 찾고 있는 사업주",
+        "동탄에 이미 자리 잡은 사업주",
+        "동탄에 살면서 이 동네 변화가 궁금한 사람",
+    ],
+}
+
+# 정보 전달이 목적인 트랙. 산출물·결론의 규칙이 다르다.
+INFO_TRACKS = ("local", "council")
+
 CALC_TABS = ["실투자금", "임대수익률", "매수 vs 임차", "입주 가능 업종", "취득세·재산세", "없음"]
 
 # ── 승인 표현 인식 ──────────────────────────────
@@ -104,6 +126,7 @@ def parse_json(text):
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
+
 HISTORY_KEEP = 8          # 최근 몇 회를 기억할 것인가
 
 
@@ -159,11 +182,57 @@ def format_history(plans):
         "",
     ]
     return "\n".join(lines)
-  
+
+
+def load_council(days=35, limit=8):
+    """최근 회의록 요약을 읽는다.
+
+    회의록 수집은 매일 돌지만 활용은 주간 발행에 녹인다.
+    기획 단계에서 이걸 알고 있어야 소재로 고를 수 있다.
+    """
+    if not os.path.exists(COUNCIL_CSV):
+        return []
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    rows = []
+    with open(COUNCIL_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            s = (r.get("요약") or "").strip()
+            if s and s != "없음" and r.get("회의일", "") >= since:
+                rows.append(r)
+    rows.sort(key=lambda r: r.get("회의일", ""), reverse=True)
+    return rows[:limit]
+
+
+def format_council(rows, track):
+    """회의록 요약을 프롬프트용 블록으로 만든다."""
+    if not rows:
+        return ""
+    body = "\n".join("- {} {} : {}".format(
+        r.get("회의일", ""), r.get("회의명", ""), (r.get("요약") or "")[:200])
+        for r in rows)
+    if track == "council":
+        head = ("[이번 글의 재료 — 최근 한 달 화성특례시의회 회의록]\n"
+                "이 글은 아래 회의록에서만 소재를 고릅니다.\n"
+                "한 회의를 통째로 옮기지 말고, 여러 회의에 걸쳐 나온\n"
+                "같은 사업의 이야기를 모아 하나의 흐름으로 엮으세요.\n")
+    else:
+        head = ("[참고 — 최근 화성특례시의회 회의록]\n"
+                "주제와 닿는 내용이 있으면 소재로 쓰세요. 없으면 무시하세요.\n")
+    return head + body + "\n"
+
+
 def build_plan_prompt(result, feedback=None, previous=None):
     kw = result["top_keyword"]
     cat = result["category_display"]
     track = result.get("track", "jisik")
+    is_info = track in INFO_TRACKS
+
+    readers = READERS_BY_TRACK.get(track, READERS)
+    output_types = cr.build_output_types(track)
+    # 회의록은 정보 전달 트랙에서만 재료로 쓴다.
+    # 지산·상가 글에 끼우면 주제가 흐려진다.
+    council_block = format_council(load_council(), track) if is_info else ""
+
     track_note = ""
     if track == "realprice":
         track_note = """..."""
@@ -177,37 +246,69 @@ def build_plan_prompt(result, feedback=None, previous=None):
 - 독자는 "임대수익 목적 투자자" 또는 "실사용 매수자" 중에서 고르세요.
 - 산출물은 ① 계산 공식 또는 ③ A vs B 선택표가 잘 맞습니다.
 """
-    history = format_history(load_history()) 
+    elif track == "local":
+        track_note = cr.LOCAL_TOPIC_GUIDE
+    elif track == "council":
+        track_note = cr.COUNCIL_TOPIC_GUIDE
+
+    history = format_history(load_history())
+
+    # ── 정보 전달 트랙과 의사결정 트랙은 2·3·4번 원칙이 다르다 ──
+    if is_info:
+        rule_2 = """2. 이 글이 독자에게 남길 '산출물'을 아래 중 하나로 정합니다.
+{types}
+   - 이 글의 목적은 독자가 몰랐던 것을 알게 하는 것입니다.
+     독자가 자기 물건에 대입해 답을 내는 글이 아닙니다.""".format(types=output_types)
+        rule_3 = """3. 핵심 결론을 한 문장으로 씁니다.
+   - "무엇이 어떻게 달라졌다"는 사실 서술이어야 합니다.
+   - "그래서 독자는 무엇을 해야 한다", "확인해야 한다", "주의해야 한다"로
+     쓰지 마세요. 이 글은 경고문이 아닙니다."""
+        rule_4 = """4. 이 글에서 짚을 사실 3가지를 만듭니다.
+   - 각 항목은 한 문장. 확인된 사실이어야 하고 추측이면 그렇다고 밝히세요.
+   - 숫자와 일정이 들어가면 좋습니다.
+   - 판단 기준이나 체크리스트 형태로 쓰지 마세요."""
+        field_4 = '"criteria": ["짚을 사실 1", "짚을 사실 2", "짚을 사실 3"],'
+        calc_note = '   - 이 트랙은 대개 "없음"이 맞습니다.'
+    else:
+        rule_2 = """2. 이 글이 독자에게 남길 '산출물'을 아래 중 하나로 정합니다.
+{types}
+   - 단순한 정보 요약이나 뉴스 해설은 산출물이 아닙니다.
+     독자가 자기 물건에 대입해 답을 낼 수 있어야 합니다.""".format(types=output_types)
+        rule_3 = """3. 핵심 결론을 한 문장으로 씁니다.
+   "무엇이 일어났다"가 아니라 "그래서 독자는 무엇을 해야 한다"의 형태여야 합니다."""
+        rule_4 = """4. 판단 기준 3가지를 만듭니다.
+   - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 쓰지 마세요. 책임 소재가 될 수 있습니다.
+   - 다만 "전용률 50% 미만이면 실사용에 부적합" 같은 사실 기반의 확인 기준은 좋습니다.
+   - 각 항목은 한 문장, 독자가 스스로 예/아니오를 판단할 수 있어야 합니다."""
+        field_4 = '"criteria": ["판단 기준 1", "판단 기준 2", "판단 기준 3"],'
+        calc_note = '   - 이 글의 주제와 직접 관련이 없으면 "없음"으로 두세요.'
+
     base = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 기획을 돕습니다.
 
 이번 글의 카테고리는 "{cat}", 검색 관심도 1위 키워드는 "{kw}" 입니다.
 
 {history}
 {track_note}
+{council_block}
 이 키워드로 글을 쓰기 전에 기획안을 먼저 만드세요. 원칙은 아래와 같습니다.
 
-1. 독자는 반드시 한 명만 고릅니다. 후보: {", ".join(READERS)}
+1. 독자는 반드시 한 명만 고릅니다. 후보: {", ".join(readers)}
    - 같은 사실도 독자에 따라 정반대 결론이 되므로, 두 명 이상을 겨냥하지 마세요.
-2. 이 글이 독자에게 남길 '산출물'을 아래 5가지 중 하나로 정합니다.
-{chr(10).join("   " + t for t in OUTPUT_TYPES)}
-   - 단순한 정보 요약이나 뉴스 해설은 산출물이 아닙니다. 독자가 자기 물건에 대입해 답을 낼 수 있어야 합니다.
-3. 핵심 결론을 한 문장으로 씁니다. "무엇이 일어났다"가 아니라 "그래서 독자는 무엇을 해야 한다"의 형태여야 합니다.
-4. 판단 기준 3가지를 만듭니다.
-   - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 쓰지 마세요. 책임 소재가 될 수 있습니다.
-   - 다만 "전용률 50% 미만이면 실사용에 부적합" 같은 사실 기반의 확인 기준은 좋습니다.
-   - 각 항목은 한 문장, 독자가 스스로 예/아니오를 판단할 수 있어야 합니다.
+{rule_2}
+{rule_3}
+{rule_4}
 5. 연결할 계산기 탭을 고릅니다. 후보: {", ".join(CALC_TABS)}
-   - 이 글의 주제와 직접 관련이 없으면 "없음"으로 두세요.
+{calc_note}
 
 아래 JSON 형식으로만 출력하세요. 다른 설명은 붙이지 마세요.
 
 {{
   "reader": "독자 상황 (위 후보 중 하나)",
-  "output_type": "산출물 유형 (위 5가지 중 하나, 번호 포함)",
+  "output_type": "산출물 유형 (위 목록 중 하나, 번호 포함)",
   "conclusion": "핵심 결론 한 문장",
-  "criteria": ["판단 기준 1", "판단 기준 2", "판단 기준 3"],
+  {field_4}
   "calc_tab": "계산기 탭 (위 후보 중 하나)",
-  "title_draft": "가제 (독자가 얻어갈 산출물이 드러나게)"
+  "title_draft": "가제 (독자가 얻어갈 것이 드러나게)"
 }}"""
 
     if feedback and previous:
@@ -225,6 +326,8 @@ def build_plan_prompt(result, feedback=None, previous=None):
 
 def format_plan_message(plan, result, round_no):
     head = "[기획안]" if round_no == 0 else "[기획안 수정본]"
+    track = result.get("track", "jisik")
+    label = "짚을 사실 3가지" if track in INFO_TRACKS else "판단 기준 3가지"
     lines = [
         head + " " + result["category_display"] + " · " + result["top_keyword"],
         "",
@@ -232,7 +335,7 @@ def format_plan_message(plan, result, round_no):
         "산출물 유형 : " + plan.get("output_type", "-"),
         "핵심 결론   : " + plan.get("conclusion", "-"),
         "",
-        "판단 기준 3가지",
+        label,
     ]
     for i, c in enumerate(plan.get("criteria", [])[:3], 1):
         lines.append("  " + str(i) + ". " + c)
@@ -299,6 +402,8 @@ def main():
         result = json.load(f)
 
     os.makedirs(STATE_DIR, exist_ok=True)
+    print("트랙: {} / 키워드: {}".format(
+        result.get("track", "jisik"), result.get("top_keyword", "")))
 
     plan = parse_json(call_claude(build_plan_prompt(result)))
     baseline = latest_update_id()
@@ -320,6 +425,7 @@ def main():
 
     save_history(plan, result)
     plan["calc_url"] = CALC_URL
+    plan["track"] = result.get("track", "jisik")
     with open(PLAN_FILE, "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
 
