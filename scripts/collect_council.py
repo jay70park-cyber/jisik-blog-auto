@@ -74,8 +74,20 @@ def fetch(url, timeout=40, retries=3):
 
 def strip_tags(s):
     s = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", s or "")
+    s = re.sub(r"(?s)<!--.*?-->", " ", s)      # 주석 안 메뉴가 본문에 섞인다
     s = re.sub(r"<[^>]+>", " ", s)
     return re.sub(r"\s+", " ", html.unescape(s)).strip()
+
+
+def body_only(text):
+    """목차와 의사일정을 잘라내고 실제 발언부터 남긴다.
+
+    회의록 앞부분은 메뉴, 안건 목록, 의사일정이 반복된다.
+    키워드가 거기서 먼저 걸리면 알맹이 없는 발췌만 나온다.
+    개의 선언 이후가 실제 회의다.
+    """
+    m = re.search(r"\(\s*\d{1,2}시\s*\d{1,2}분\s*개의\s*\)", text)
+    return text[m.end():] if m else text
 
 
 def parse_list(page_html):
@@ -135,27 +147,49 @@ def find_hits(text, agenda):
     return issues, words
 
 
+def score(window, words):
+    """이 대목이 읽을 가치가 있는지 점수를 매긴다.
+
+    같은 단어라도 목차에 있는 것과 질의답변에 있는 것은 값이 다르다.
+    첫 등장을 쓰면 거의 항상 목차가 걸린다. 그래서 점수로 고른다.
+    """
+    pts = sum(1 for w in words if w in window)
+    if re.search(r"\d[\d,]*\s*억", window):
+        pts += 3                       # 금액이 나오면 구체적인 이야기다
+    if re.search(r"유찰|지연|감액|무산|재심의|반려|미확보", window):
+        pts += 3                       # 문제가 드러난 대목
+    pts += 2 * len(re.findall(r"○", window))   # 발언 주고받는 대목
+    if re.search(r"의사일정|안건보기|맨위로|회 의 록|선택취소", window):
+        pts -= 8                       # 목차·머리말
+    return pts
+
+
 def excerpts(text, words):
-    """적중어 주변을 잘라낸다.
+    """읽을 만한 대목만 잘라낸다.
 
     회의록은 5만 자가 넘는다. 링크만 던지면 안 읽는다.
-    걸린 대목만 보여주고 더 볼지는 사람이 정하게 한다.
+    걸린 대목 중 점수가 높은 것부터 보여주고,
+    더 볼지는 사람이 정하게 한다.
     """
-    spans = []
+    cands = []
     for w in words:
         for m in re.finditer(re.escape(w), text):
-            spans.append((max(0, m.start() - CONTEXT),
-                          min(len(text), m.end() + CONTEXT)))
-            break                       # 같은 단어는 첫 등장만
-    spans.sort()
+            a = max(0, m.start() - CONTEXT)
+            b = min(len(text), m.end() + CONTEXT)
+            cands.append((score(text[a:b], words), a, b))
 
-    merged = []
-    for s, e in spans:
-        if merged and s <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], e)
-        else:
-            merged.append([s, e])
-    return ["…" + text[s:e].strip() + "…" for s, e in merged[:MAX_EXCERPT]]
+    picked = []
+    for pts, a, b in sorted(cands, key=lambda c: -c[0]):
+        if pts <= 0:
+            break
+        if any(a < pb and pa < b for _, pa, pb in picked):
+            continue               # 이미 고른 대목과 겹친다
+        picked.append((pts, a, b))
+        if len(picked) >= MAX_EXCERPT:
+            break
+
+    picked.sort(key=lambda c: c[1])
+    return ["…" + text[a:b].strip() + "…" for _, a, b in picked]
 
 
 def load_existing():
@@ -211,7 +245,7 @@ def main():
         time.sleep(1)
         if not body:
             continue
-        text = strip_tags(body)
+        text = body_only(strip_tags(body))
         issues, words = find_hits(text, agenda)
         m["현안"] = ", ".join(issues)
         m["적중어"] = ", ".join(words)
