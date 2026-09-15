@@ -11,7 +11,7 @@ on:
     - cron: '10 22 * * *'
 
 concurrency:
-  group: jisik-blog-pipeline
+  group: hscity-collect
   cancel-in-progress: false
 
 jobs:
