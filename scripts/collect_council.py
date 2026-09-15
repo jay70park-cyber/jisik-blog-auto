@@ -141,14 +141,14 @@ def load_agenda():
             words = [w.strip() for w in (r.get("키워드") or "").split("|")
                      if w.strip()]
             if name and words:
-                out.append((name, words))
+                out.append((name, words, (r.get("단계") or "").strip()))
     return out
 
 
 def find_hits(text, agenda):
     """현안 키워드와 보조 키워드가 본문 어디에 나오는지 찾는다."""
     issues, words = [], []
-    for name, keys in agenda:
+    for name, keys, _ in agenda:
         for k in keys:
             if k in text:
                 if name not in issues:
@@ -214,52 +214,79 @@ def excerpts(text, words):
 
 
 SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
+동탄 부동산·지역개발 블로그를 쓰는 사람에게 보낼 요약을 만들어라.
 
-이 회의록에서 아래에 해당하는 논의만 뽑아 3~5줄로 요약하라.
-각 줄은 사실 하나씩, 한 줄에 60자 안팎.
+# 추적 중인 현안
+{agenda}
 
-담을 것 (부동산 가치와 개발 흐름에 직접 닿는 것)
-- 도시계획·지구단위계획·용도변경·산업단지·지식산업센터
-- 철도·트램·광역도로 등 교통망 신설과 그 일정
-- 택지·주택 공급, 토지 보상과 매각, 도시개발사업
-- 대형 개발사업의 지연·유찰·감액·무산과 그 이유
+# 무엇을 담을지
+다음 순서로 중요한 것부터 고른다. 위에 있을수록 우선한다.
 
-담지 말 것 (지역 행정이지만 부동산과는 거리가 먼 것)
-- 복지, 환경미화, 폐기물, 청소, 문화·체육 행사
-- 소방서·주민센터 등 생활 공공시설 건립
-- 자율주행, 스마트시티 같은 시범사업
-- 어린이보호구역, 주차장 등 국지적 시설 개선
-- 인사말, 절차 진행, 일반 행정
+1. 위 현안에 해당하는 논의. 조금이라도 나오면 반드시 담는다.
+2. 사업이 막히거나 늦어진 대목. 유찰, 지연, 감액, 무산, 반려,
+   소송, 미확보, 주민 반대. 그 이유까지 담는다.
+3. 의원과 공무원이 주고받은 질의응답. 담당자가 설명만 한 대목보다
+   질의가 오간 대목이 중요하다.
+4. 도시계획·용도변경·산업단지·지식산업센터·철도·광역도로·택지·
+   주택공급·토지보상·도시개발
+5. 지역 산업. 기업 유치, 투자, 산업단지 조성, 산업 지원 예산
 
-규칙
-- 금액, 일정, 공정률, 찬반 같은 구체적인 숫자를 반드시 포함할 것
-- 숫자는 회의록에 적힌 그대로 옮기고 단위를 임의로 바꾸지 말 것
-- 결론이 안 난 사안은 무엇이 미정인지 밝힐 것
-- 담을 것에 해당하는 논의가 없으면 "없음" 한 단어만 출력
-- 제목, 머리말, 기호, 번호를 붙이지 말고 줄바꿈으로만 구분할 것
-- 요약문 외에 어떤 말도 덧붙이지 말 것
+담지 않는 것: 복지, 환경미화, 폐기물, 청소, 문화·체육 행사,
+인사말, 절차 진행, 일반 행정.
+
+한 과의 예산 항목을 골고루 훑지 마라. 중요한 하나를 깊게 담는 편이
+여러 개를 얕게 담는 것보다 낫다.
+
+# 규칙
+- 금액, 일정, 공정률 같은 숫자를 반드시 포함한다
+- 숫자는 회의록에 적힌 그대로 옮기고 단위를 바꾸지 않는다
+- 결론이 안 난 사안은 무엇이 미정인지 밝힌다
+- 제목, 머리말, 기호, 번호를 붙이지 않는다
+
+# 출력 형식
+아래 JSON만 출력한다. 다른 말은 일절 붙이지 않는다.
+
+{{"summary": ["요약 한 줄", "요약 한 줄"],
+  "updates": [{{"issue": "현안명",
+                "progress": "그 현안에 무슨 일이 있었는지 한 줄",
+                "stage": "계획|심의 전|결정|착공준비|보상·수용|공사중|준공|모름",
+                "confident": true}}]}}
+
+summary 는 3~5줄. 담을 논의가 없으면 빈 배열.
+updates 는 위 현안 목록에 있는 것만. 이름을 그대로 쓴다.
+해당 현안 논의가 없으면 빈 배열.
+
+stage 는 회의록에서 그 사업이 지금 어느 단계인지다.
+발언에서 단계가 분명히 드러날 때만 고르고, 애매하면 "모름".
+confident 는 그 단계 판단이 확실할 때만 true.
+의원이 일정을 묻기만 했거나 계획을 언급한 정도면 false.
 
 회의록:
 """
 
-def summarize(text, timeout=120):
-    """회의록을 요약한다.
+
+def summarize(text, agenda, timeout=120):
+    """회의록을 요약하고 현안별 진전을 뽑는다.
 
     회의록은 발언이 오가는 형식이라 발췌로는 한계가 뚜렷하다.
-    "증액을 했습니다 / 증액을 더 하셔서? / 네." 같은 대목을
-    그대로 보내봐야 읽히지 않는다.
+    그리고 예산 심의 회의록은 모든 과가 돌아가며 설명하기 때문에,
+    그냥 요약하라고 하면 골고루 훑다가 정작 길게 다툰 대목을 놓친다.
+    그래서 현안 목록을 같이 넘기고 우선순위를 못 박는다.
 
-    요약이 잡음 필터 역할도 한다. 키워드는 걸렸지만 실제로는
-    폐기물이나 청소 용역 이야기였다면 "없음"이 돌아오고,
-    그러면 알리지 않는다.
+    돌려주는 값
+      None        요약 실패. 발췌로 대신한다
+      ([], [])    담을 논의가 없다. 알리지 않는다
+      (요약줄들, 갱신들)
     """
     if not ANTHROPIC_API_KEY:
-        return ""
+        return None
+    listing = "\n".join("- {} (현재 단계: {})".format(n, st or "모름")
+                        for n, _, st in agenda) or "- (없음)"
+    prompt = SUMMARY_PROMPT.format(agenda=listing) + text[:150000]
     body = json.dumps({
         "model": SUMMARY_MODEL,
-        "max_tokens": 700,
-        "messages": [{"role": "user",
-                      "content": SUMMARY_PROMPT + text[:150000]}],
+        "max_tokens": 1200,
+        "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages", data=body, headers={
@@ -272,14 +299,68 @@ def summarize(text, timeout=120):
             data = json.loads(res.read().decode("utf-8"))
         out = "".join(b.get("text", "") for b in data.get("content", [])
                       if b.get("type") == "text").strip()
-        # 제목 줄을 붙이지 말라고 해도 가끔 붙는다. 여기서 한 번 더 지운다.
-        keep = [ln.strip() for ln in out.splitlines()
-                if ln.strip() and not ln.lstrip().startswith("#")]
-        out = "\n".join(keep)
-        return "" if out.replace(".", "").strip() == "없음" else out
+        out = re.sub(r"^```(?:json)?|```$", "", out, flags=re.M).strip()
+        m = re.search(r"\{.*\}", out, re.S)
+        parsed = json.loads(m.group(0) if m else out)
+        summary = [str(x).strip() for x in parsed.get("summary", [])
+                   if str(x).strip()]
+        updates = [u for u in parsed.get("updates", [])
+                   if isinstance(u, dict) and u.get("issue")]
+        return summary, updates
     except Exception as e:
         print("    요약 실패: {}".format(e))
-        return None          # None = 실패, "" = 관련 없음
+        return None
+
+
+def apply_updates(updates, meeting):
+    """회의록에서 읽은 진전을 현안 목록에 반영한다.
+
+    고시와 같은 칸을 쓰므로 날짜가 더 최신일 때만 덮는다.
+    단계는 모델이 확신할 때만 바꾸고, 그때도 확인필요를 남긴다.
+    회의록은 '착공은 언제 합니까' 하고 묻기만 해도 착공처럼 읽히기 때문이다.
+    """
+    if not updates or not os.path.exists(AGENDA_CSV):
+        return []
+    with open(AGENDA_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        cols = list(reader.fieldnames or [])
+        rows = list(reader)
+    for c in ("단계", "최근진전일", "진전내용", "확인필요"):
+        if c not in cols:
+            cols.append(c)
+
+    date = meeting.get("회의일", "")
+    changed = []
+    for u in updates:
+        row = next((r for r in rows
+                    if (r.get("현안명") or "").strip() == u["issue"].strip()),
+                   None)
+        if row is None or date <= (row.get("최근진전일") or ""):
+            continue
+        progress = str(u.get("progress", "")).strip()[:80]
+        if not progress:
+            continue
+
+        stage = str(u.get("stage", "")).strip()
+        note = "회의록 반영"
+        if stage and stage != "모름" and u.get("confident") is True:
+            if stage != (row.get("단계") or ""):
+                row["단계"] = stage
+                note = "회의록 기준 단계 변경 · 원문 확인"
+        else:
+            note = "회의록 반영 · 단계 확인"
+
+        row["최근진전일"] = date
+        row["진전내용"] = "[의회] " + progress
+        row["확인필요"] = note
+        changed.append((u["issue"], row["단계"], note))
+
+    if changed:
+        with open(AGENDA_CSV, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+    return changed
 
 
 def load_existing():
@@ -350,22 +431,36 @@ def main():
         if not words:
             continue
 
-        summary = summarize(text)
-        if summary == "":
-            print("     → 부동산 관련 논의 없음, 알리지 않음")
+        result = summarize(text, agenda)
+        if result is None:
+            # 요약이 실패하면 예전처럼 발췌를 보낸다. 알림을 거르지는 않는다.
+            lines = ["{} {} {} {}".format(
+                mark, m["회의일"], m["회의명"], m["차수"])]
+            if issues:
+                lines.append("현안: " + m["현안"])
+            lines += excerpts(text, words)
+            lines.append(m["링크"])
+            blocks.append((bool(issues), "\n".join(lines)))
+            continue
+
+        summary, updates = result
+        if not summary:
+            print("     → 담을 논의 없음, 알리지 않음")
             m["요약"] = "없음"
             continue
+
+        m["요약"] = " / ".join(summary)[:300]
+        changed = apply_updates(updates, m)
+        for name, stage, note in changed:
+            print("     → 현안 갱신: {} ({}) {}".format(name, stage, note))
 
         lines = ["{} {} {} {}".format(
             mark, m["회의일"], m["회의명"], m["차수"])]
         if issues:
             lines.append("현안: " + m["현안"])
-        if summary:
-            lines.append(summary)
-            m["요약"] = summary[:300]
-        else:
-            # 요약이 실패하면 예전처럼 발췌를 보낸다. 알림을 거르지는 않는다.
-            lines += excerpts(text, words)
+        lines += summary
+        for name, stage, note in changed:
+            lines.append("※ {} → {} [{}]".format(name, stage or "?", note))
         lines.append(m["링크"])
         blocks.append((bool(issues), "\n".join(lines)))
 
