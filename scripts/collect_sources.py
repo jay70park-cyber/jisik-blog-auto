@@ -57,6 +57,7 @@ COUNCIL_KEYWORDS = ["화성시의회", "화성시 예산", "동탄 개발 현안
 LOCAL_FALLBACK_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
 
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
+NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
 STATE_DIR = "state"
 ROTATION_STATE_FILE = os.path.join(STATE_DIR, "rotation_index.txt")
 AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
@@ -64,6 +65,8 @@ AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
 FRESH_DAYS = 14        # 최근진전일이 이 안이면 '진전 있음'
 NEW_GRACE_DAYS = 30    # 추가된 지 이 안이면 신선도 판정 면제
 NEWS_DAYS = 14         # 구글 뉴스를 이 기간만 센다
+NOTICE_DAYS = 365      # 고시는 연표 재료라 길게 본다
+NOTICE_LIMIT = 10      # 한 현안에 붙일 고시 최대 건수
 
 
 # ─────────────────────────────────────────────
@@ -316,6 +319,45 @@ def pick_agenda():
     return pick, log, pick["_why"]
 
 
+def load_notices(agenda_row):
+    """이 현안에 걸린 화성시 고시를 공고일 순으로 돌려준다.
+
+    고시는 기사보다 먼저 나오고 행정 절차가 제목에 그대로 드러난다.
+    한 현안의 고시를 시간순으로 늘어놓으면 그 자체가 연표가 된다.
+    지역 개발 글의 '지금까지의 흐름' 섹션 재료가 바로 이것이다.
+    """
+    if not os.path.exists(NOTICE_CSV):
+        return []
+    name = (agenda_row.get("현안명") or "").strip()
+    words = [w.strip() for w in (agenda_row.get("키워드") or "").split("|")
+             if w.strip()]
+    cutoff = (today_kst() - datetime.timedelta(days=NOTICE_DAYS)).isoformat()
+
+    out = []
+    with open(NOTICE_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            date = (r.get("공고일자") or "").strip()
+            if date < cutoff:
+                continue
+            title = (r.get("제목") or "").strip()
+            # collect_hscity 가 이미 붙여둔 현안 표시를 우선 믿고,
+            # 없으면 키워드로 직접 대조한다.
+            tagged = name and name in (r.get("현안") or "")
+            if not (tagged or any(w in title for w in words)):
+                continue
+            out.append({
+                "date": date,
+                "title": title,
+                "dept": (r.get("부서") or "").strip(),
+                "board": (r.get("게시판") or "").strip(),
+                "link": (r.get("링크") or "").strip(),
+            })
+
+    out.sort(key=lambda r: r["date"])
+    # 너무 많으면 최신 쪽을 남긴다. 연표는 뒤쪽이 중요하다.
+    return out[-NOTICE_LIMIT:]
+
+
 def mark_published(agenda_id):
     """마지막발행일을 오늘로 갱신한다. 다른 열은 건드리지 않는다."""
     if not os.path.exists(AGENDA_CSV):
@@ -455,6 +497,7 @@ def main():
             "확인필요": agenda.get("확인필요", ""),
             "선정사유": agenda.get("_why", ""),
             "최근뉴스": [{"date": d, "title": t} for d, t in agenda.get("_news", [])[:8]],
+            "관련고시": load_notices(agenda),
         }
         write_last_agenda_id(agenda["id"])
         mark_published(agenda["id"])
@@ -474,6 +517,11 @@ def main():
         ]
         if a["확인필요"]:
             lines.append("확인필요: " + a["확인필요"])
+        if a["관련고시"]:
+            lines.append("")
+            lines.append("관련 고시 {}건".format(len(a["관련고시"])))
+            for n in a["관련고시"][-4:]:
+                lines.append("  " + n["date"] + " " + n["title"][:50])
         if a["최근뉴스"]:
             lines.append("")
             lines.append("최근 뉴스")
