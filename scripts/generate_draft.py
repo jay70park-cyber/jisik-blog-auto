@@ -5,6 +5,7 @@ Claude API(+웹 검색 도구)를 이용해 수집 결과(collection_result.json
 텔레그램으로 초안 파일을 발송한다.
 """
 import os
+import csv
 import json
 import datetime
 import urllib.request
@@ -18,7 +19,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import make_thumbnail as thumb
-from content_rules import build_rules
+from content_rules import (build_rules, build_council_section,
+                           build_info_structure, INFO_CORE_PRINCIPLE,
+                           INFO_TRACKS)
 
 NAVER_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
@@ -168,14 +171,37 @@ def load_auction_summary(max_chars=2000):
     if len(text) > max_chars:
         text = text[:max_chars] + "\n(이하 생략)"
     print("경매 요약 로드: {}자".format(len(text)))
-    return text    
-    
+    return text
+
+
+def load_council_rows(days=35, limit=8):
+    """최근 회의록 요약을 읽는다. 지역·시의회 트랙에서만 쓴다.
+
+    회의록 수집은 매일 돌지만 활용은 주간 발행에 녹인다.
+    요약이 '없음'인 것은 부동산과 무관한 회의라 뺀다.
+    """
+    path = os.path.join("data", "council_minutes.csv")
+    if not os.path.exists(path):
+        print("회의록 파일 없음 - 회의록 섹션 없이 진행합니다.")
+        return []
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    rows = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            s = (r.get("요약") or "").strip()
+            if s and s != "없음" and r.get("회의일", "") >= since:
+                rows.append(r)
+    rows.sort(key=lambda r: r.get("회의일", ""), reverse=True)
+    print("회의록 로드: {}건".format(len(rows[:limit])))
+    return rows[:limit]
+
+
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
-    
+
     reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
-    
+
     # 실거래 트랙은 데이터가 주인공이므로 독자와 무관하게 항상 넘긴다.
     # 그 외 트랙에서만 임차인 독자에게 매매 데이터를 빼준다.
     if "임차" in reader and category not in ("realprice", "auction"):
@@ -198,6 +224,17 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     calc_tab = plan.get("calc_tab", "없음")
     calc_url = plan.get("calc_url", "")
     criteria_desc = "\n".join("   " + str(i) + ". " + s for i, s in enumerate(criteria[:3], 1)) or "   (미정)"
+
+    # 정보 전달 트랙(지역 개발·시의회)은 핵심 원칙과 구조가 다르다.
+    # 지산 글의 "이 글은 판단 도구다"를 그대로 적용하면
+    # 기획을 고쳐도 초안에서 다시 경고문으로 돌아간다.
+    is_info = category in INFO_TRACKS
+    council_block = build_council_section(load_council_rows()) if is_info else ""
+    criteria_label = "이 글에서 짚을 사실 3가지" if is_info else "판단 기준 3가지"
+    core_principle = INFO_CORE_PRINCIPLE if is_info else (
+        "가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**\n"
+        "독자가 다 읽고 나서 \"그래서 나는 무엇을 하면 되는가\"에 스스로 답할 수 있어야 합니다.\n"
+        "사실을 나열하고 \"확인해보세요\"로 끝내는 글은 실패입니다.")
 
     calc_block = ""
     if calc_tab and calc_tab != "없음" and calc_url:
@@ -230,7 +267,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
   본문에서 참고치임을 밝히세요.
 - 표에 구분 이름과 함께 각 항목의 거래 건수를 반드시 표기하세요.
 """
-   
+
     news_block = ""
     if headlines:
         news_block = f"""[지역 뉴스 제목 — {hl_date} 수집분]
@@ -266,7 +303,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 """
 
     no_data_rule = ""
-    if not realprice and not auction:
+    if not realprice and not auction and not is_info:
         no_data_rule = """
 **수치 표 금지**: 이번 글에는 실거래·경매 데이터가 주어지지 않았습니다.
 가격·임대료·면적을 담은 비교표를 만들지 마세요. 예시나 가상 숫자로
@@ -319,7 +356,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 10. ## 이 데이터에 대하여
    - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
    - (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙습니다. 표를 직접 만들지 마세요.)"""
-   
+
     elif category == "realprice":
         structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
 
@@ -333,8 +370,6 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 위 실거래 데이터를 표로 정리하세요. 유형별 또는 블록별 중 이번 주제에 맞는 것을 고르세요.
    - 표에 없는 숫자를 본문에서 지어내지 마세요.
    - 표 아래에 이 표를 어떻게 읽어야 하는지 두세 문장으로 안내하세요.
-   - 위 실거래 데이터를 표로 정리하세요. 유형별 또는 블록별 중 이번 주제에 맞는 것을 고르세요.
-   - 표에 없는 숫자를 본문에서 지어내지 마세요.
 
 4. ## 눈에 띄는 것
    - 특이값 2~3개를 골라 왜 그런지 따져보세요.
@@ -363,7 +398,11 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 9. ## 이 데이터에 대하여
    - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
    - (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙입니다. 표를 직접 만들지 마세요.)"""
-   
+
+    elif is_info:
+        # 지역 개발·시의회 트랙. 구조는 content_rules.py 에 있다.
+        structure_block = build_info_structure(category, refs_rule, council_block)
+
     else:
         structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
 
@@ -403,6 +442,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
 9. ## 이 주제를 고른 이유
    - 이 주제를 다루게 된 배경을 2~3문장으로 짧게 씁니다. (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙입니다. 표를 직접 만들지 마세요.)"""
+
     prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
 오늘 날짜는 {today} 입니다.
 
@@ -412,7 +452,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 독자: {reader} (이 한 사람만 겨냥합니다. 다른 독자층을 위한 내용은 넣지 마세요.)
 - 산출물 유형: {output_type}
 - 핵심 결론: {conclusion}
-- 판단 기준 3가지:
+- {criteria_label}:
 {criteria_desc}
 - 검색 관심도 1위 키워드: {kw}
 
@@ -422,10 +462,9 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 {realprice_block}
 {news_block}
 {auction_block}
+{council_block}
 ──────────────────────────────
-가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**
-독자가 다 읽고 나서 "그래서 나는 무엇을 하면 되는가"에 스스로 답할 수 있어야 합니다.
-사실을 나열하고 "확인해보세요"로 끝내는 글은 실패입니다.
+{core_principle}
 
 **웹 검색 활용**
 - 웹 검색 도구로 이 주제의 최신 법령·세율·정책·시세를 오늘 날짜 기준으로 직접 조사해 실제 숫자로 쓰세요.
@@ -445,9 +484,9 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 근거로 든 기사가 일주일보다 오래됐으면 "최근", "이번 주", "알려졌다" 같은
   새 소식 표현을 쓰지 마세요. 사실관계만 서술하세요.
 - 근거 링크는 그 문장을 실제로 뒷받침하는 것만 다세요.
-  2024년 개통 사실을 다룬 자료를 2026년 일정의 근거로 달지 마세요.   
+  2024년 개통 사실을 다룬 자료를 2026년 일정의 근거로 달지 마세요.
 
-{no_data_rule} 
+{no_data_rule}
 {structure_block}
 
 **이미지 삽입**: 본문 중 정확히 2곳에 `[이미지: 한글설명 | search: 영어검색키워드]` 형식으로 넣으세요.
@@ -484,7 +523,6 @@ def send_telegram_message(text, timeout=20):
     req = urllib.request.Request(url, data=body, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as res:
         res.read()
-
 
 
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
@@ -622,7 +660,6 @@ def build_score_table_html(rows):
         '<th width="15%" style="' + th_style_right + 'width:15%;">관심도스코어</th>'
         "</tr></thead><tbody>" + body_rows + "</tbody></table>"
     )
-
 
 
 # 붙여넣기 편집기(네이버 블로그 등)는 <style> 블록의 클래스 스타일을 대부분 걸러내고,
@@ -896,6 +933,7 @@ def main():
 
     refs = fetch_reference_links(result["top_keyword"])
     track = result.get("track", "jisik")
+    print("트랙: " + track)
     prompt = build_prompt(result, refs, today, plan=plan, category=track)
 
     draft = call_claude_with_search(prompt)
@@ -924,11 +962,11 @@ def main():
     from date_guard import check_dates
     _bad = [n for n in check_dates(draft) if n[1] == "실패"]
     _warn = ("\n\n⚠️ 지난 날짜를 미래형으로 쓴 곳: " + _bad[0][2][:150]) if _bad else ""
-    
+
     caption = (
         draft_title
         + "\n웹 검색으로 최신 수치를 채워 넣었습니다. 노란 하이라이트 " + str(mark_count) + "곳만 직접 확인해주세요."
-        + _warn  
+        + _warn
         + "\n\n▶ 이 파일을 다운로드해서 브라우저로 열어보세요(파일을 눌러 크롬 등으로 열기). 서식이 그대로 보입니다."
         + "\n승인하시려면 '승인'이라고, 수정이 필요하면 원하는 내용을 답장해주세요."
     )
