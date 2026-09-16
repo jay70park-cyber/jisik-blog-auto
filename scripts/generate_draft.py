@@ -8,6 +8,10 @@ import os
 import csv
 import json
 import datetime
+KST = datetime.timezone(datetime.timedelta(hours=9))
+
+def today_kst():
+    return datetime.datetime.now(KST).date()
 import urllib.request
 import urllib.parse
 import markdown as md_lib
@@ -184,7 +188,7 @@ def load_council_rows(days=35, limit=8):
     if not os.path.exists(path):
         print("회의록 파일 없음 - 회의록 섹션 없이 진행합니다.")
         return []
-    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    since = (today_kst() - datetime.timedelta(days=days)).isoformat()
     rows = []
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
@@ -204,7 +208,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
     # 실거래 트랙은 데이터가 주인공이므로 독자와 무관하게 항상 넘긴다.
     # 그 외 트랙에서만 임차인 독자에게 매매 데이터를 빼준다.
-    if "임차" in reader and category not in ("realprice", "auction"):
+    if category in INFO_TRACKS:
+        realprice = ""
+        print("정보 전달 트랙 - 실거래 데이터는 넘기지 않습니다.")
+    elif "임차" in reader and category not in ("realprice", "auction"):
         realprice = ""
         print("임차인 독자 - 매매 실거래 데이터는 넘기지 않습니다.")
     else:
@@ -730,7 +737,9 @@ def _inline_styles(html):
     return html
 
 
-def render_naver_html(markdown_text, title="블로그 초안", category_display=None, top_keyword=None, rows=None, table_position="top"):
+    def render_naver_html(markdown_text, title="블로그 초안", category_display=None,
+                      top_keyword=None, rows=None, table_position="top",
+                      track="jisik", agenda=None):
     """마크다운을 네이버 블로그 붙여넣기에 적합한, 인라인 스타일 기반 HTML로 변환한다."""
     # [이미지: 설명] 표시를 실제 그래프/사진으로 치환 (실패 시 안내 박스로 대체)
     prepped = render_images(markdown_text, rows)
@@ -774,13 +783,28 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
             table_html = ""
         intro_style = "background:#F5F6FA;border-radius:10px;padding:16px 18px;color:#444;font-size:19px;line-height:1.7;"
         strong_style = "color:#1F3C88;font-weight:700;"
-        intro_html = (
-            '<p style="' + intro_style + '">최근 지식산업센터 관련 검색 데이터를 살펴보니, '
-            '<strong style="' + strong_style + '">' + top_keyword + '</strong>을(를) 찾아보는 분들이 가장 많았습니다.<br>'
-            "그래서 이번 글에서는 이 주제를 중심으로, 실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다.</p>"
-            + table_html
-        )
-        body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
+        
+        if track == "council":
+            intro_body = (
+                "화성특례시의회 회의록을 최근 한 달치 훑어 정리했습니다.<br>"
+                "공식 보도자료에는 나오지 않던 내용을 중심으로 추렸습니다."
+            )
+        elif track == "local" and agenda:
+            intro_body = (
+                "동탄에서 계속 지켜보고 있는 지역 현안 가운데 "
+                '<strong style="' + strong_style + '">' + agenda.get("현안명", "") + "</strong> "
+                "소식을 정리했습니다.<br>"
+                "지금 어디까지 왔고 무엇이 아직 정해지지 않았는지 짚어봤습니다."
+            )
+        else:
+            intro_body = (
+                "최근 지식산업센터 관련 검색 데이터를 살펴보니, "
+                '<strong style="' + strong_style + '">' + top_keyword + "</strong>을(를) "
+                "찾아보는 분들이 가장 많았습니다.<br>"
+                "그래서 이번 글에서는 이 주제를 중심으로, 실제로 확인해야 할 부분과 "
+                "놓치기 쉬운 고려사항을 정리해 봤습니다."
+            )
+        intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -920,7 +944,7 @@ def main():
     with open("collection_result.json", "r", encoding="utf-8") as f:
         result = json.load(f)
 
-    today = datetime.date.today().isoformat()
+    today = today_kst().isoformat()
 
     plan = {}
     plan_path = os.path.join("state", "plan.json")
@@ -953,7 +977,16 @@ def main():
 
     # 실제로 보여주고 검토할 파일은 서식이 살아있는 HTML로 변환
     draft_title = "[초안] " + result["category_display"] + " - " + result["top_keyword"]
-    html = render_naver_html(draft, title=draft_title, category_display=result["category_display"], top_keyword=result["top_keyword"], rows=result["rows"], table_position="bottom")
+    html = render_naver_html(
+        draft,
+        title=draft_title,
+        category_display=result["category_display"],
+        top_keyword=result["top_keyword"],
+        rows=result["rows"],
+        table_position="bottom",
+        track=track,
+        agenda=result.get("agenda"),
+    )
     with open("draft.html", "w", encoding="utf-8") as f:
         f.write(html)
 
