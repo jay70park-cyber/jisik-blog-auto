@@ -121,10 +121,41 @@ jobs:
           # ─────────────────────────────────────────────
           section("1. 모듈 import")
           # ─────────────────────────────────────────────
+          def show_source(fname, lineno, before=14, after=8, modname=None):
+              """문법 오류 지점 주변을 줄번호와 함께 찍는다."""
+              if (not fname or not os.path.exists(fname)) and modname:
+                  # 예외가 경로를 안 담고 있는 경우가 있어 모듈 위치로 되짚는다
+                  for base in sys.path:
+                      cand = os.path.join(base, modname + ".py")
+                      if os.path.exists(cand):
+                          fname = cand
+                          break
+              if not fname or not os.path.exists(fname):
+                  print("      (소스 파일을 찾지 못했습니다: {})".format(fname))
+                  return
+              if not lineno:
+                  print("      (오류 줄번호를 알 수 없습니다)")
+                  return
+              with open(fname, encoding="utf-8") as f:
+                  lines = f.read().split("\n")
+              lo = max(0, lineno - before - 1)
+              hi = min(len(lines), lineno + after)
+              print("\n      ── {} {}~{}행 ──".format(os.path.basename(fname), lo + 1, hi))
+              for i in range(lo, hi):
+                  mark = " >>" if (i + 1) == lineno else "   "
+                  body = lines[i]
+                  indent = len(body) - len(body.lstrip(" ")) if body.strip() else 0
+                  print("     {}{:>5} |{:>3}| {}".format(mark, i + 1, indent, body))
+              print("      (가운데 칸은 그 줄의 들여쓰기 칸 수입니다)\n")
+
+
           for name in ["content_rules", "collect_sources", "generate_plan", "generate_draft"]:
               try:
                   importlib.import_module(name)
                   check(True, name)
+              except SyntaxError as e:
+                  check(False, "{} — {}: {} ({}행)".format(name, type(e).__name__, e.msg, e.lineno))
+                  show_source(e.filename, e.lineno, modname=name)
               except Exception as e:
                   check(False, "{} — {}: {}".format(name, type(e).__name__, e))
 
@@ -261,7 +292,7 @@ jobs:
               check(fake_local["agenda"]["현안명"] in p, "기획 프롬프트에 현안 포함")
               check("다른 사안으로 넘어가지 마세요" in p, "소재 고정 지시 포함")
               check("변화 연표" in p, "local 산출물 유형이 붙음")
-              check("위험 신호 목록" not in p.split("[이 글에서 쓸 수 있는")[0], "판단형 유형이 앞서 새지 않음")
+              check("체크리스트 형태를 쓰지 말 것" in p, "local 금지 지침(체크리스트 금지) 포함")
 
           check(hasattr(gp, "today_kst"), "generate_plan 에 today_kst 있음")
 
@@ -316,18 +347,43 @@ jobs:
           html_local = gd.render_naver_html(md, top_keyword=fake_local["top_keyword"],
                                             rows=None, track="local",
                                             agenda=fake_local["agenda"])
-          check("지식산업센터 관련 검색 데이터" not in html_local,
-                "local 글에 '검색 데이터 1위' 문구 없음")
-          check(fake_local["agenda"]["현안명"] in html_local, "local 도입에 현안명 들어감")
-
           html_council = gd.render_naver_html(md, top_keyword="화성시의회", rows=None, track="council")
-          check("회의록" in html_council, "council 도입 문구 적용됨")
-          check("지식산업센터 관련 검색 데이터" not in html_council,
-                "council 글에 '검색 데이터 1위' 문구 없음")
-
           html_jisik = gd.render_naver_html(md, top_keyword="지식산업센터 취득세 감면",
                                             rows=None, track="jisik")
-          check("지식산업센터 관련 검색 데이터" in html_jisik, "지산 글은 기존 문구 유지")
+
+          r1 = check("지식산업센터 관련 검색 데이터" not in html_local,
+                     "local 글에 '검색 데이터 1위' 문구 없음")
+          r2 = check(fake_local["agenda"]["현안명"] in html_local, "local 도입에 현안명 들어감")
+          r3 = check("회의록" in html_council, "council 도입 문구 적용됨")
+          r4 = check("지식산업센터 관련 검색 데이터" not in html_council,
+                     "council 글에 '검색 데이터 1위' 문구 없음")
+          r5 = check("지식산업센터 관련 검색 데이터" in html_jisik, "지산 글은 기존 문구 유지")
+
+          if not (r2 and r3 and r5):
+              print("\n      ── 진단: 도입 문구가 삽입되지 않았습니다 ──")
+              print("\n      [실제 출력 — local]")
+              inner = html_local.split("<body")[-1]
+              print("      " + inner[:700].replace("\n", "\n      "))
+
+              import inspect
+              try:
+                  srclines, start = inspect.getsourcelines(gd.render_naver_html)
+              except Exception as e:
+                  print("      소스를 읽지 못했습니다: " + str(e))
+                  srclines, start = [], 0
+              hits = [i for i, l in enumerate(srclines)
+                      if ("intro" in l) or ("</h1>" in l) or ("top_keyword:" in l)
+                      or ("table_html" in l) or ("table_position" in l)]
+              if hits:
+                  lo, hi = max(0, hits[0] - 3), min(len(srclines), hits[-1] + 4)
+                  print("\n      [render_naver_html 소스 {}~{}행]".format(start + lo, start + hi - 1))
+                  for i in range(lo, hi):
+                      body = srclines[i].rstrip("\n")
+                      ind = len(body) - len(body.lstrip(" ")) if body.strip() else 0
+                      print("      {:>5} |{:>3}| {}".format(start + i, ind, body))
+              else:
+                  print("      intro 관련 줄을 찾지 못했습니다 — 블록이 통째로 사라졌을 수 있습니다.")
+              print("      (가운데 칸은 들여쓰기 칸 수입니다)\n")
 
 
           # ─────────────────────────────────────────────
