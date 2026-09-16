@@ -248,6 +248,20 @@ def build_agenda_block(result):
     if a.get("확인필요"):
         lines.append("확인필요  : {} — 이 항목은 아직 확인되지 않았습니다.".format(a["확인필요"]))
         lines.append("           단정하지 말고 '아직 정해지지 않았다'로 쓰세요.")
+      
+    notices = a.get("관련고시") or []
+    if notices:
+        lines.append("")
+        lines.append("이 현안으로 나온 화성시 고시·공고 (공고일 순)")
+        for n in notices:
+            lines.append("  - {} [{}] {}".format(
+                n.get("date", ""), n.get("dept", ""), n.get("title", "")))
+        lines.append("")
+        lines.append("  고시 제목에는 행정 절차가 그대로 드러납니다.")
+        lines.append("  '열람·의견청취'는 심의 전, '결정 고시'는 확정,")
+        lines.append("  '실시계획 인가'는 착공 직전, '재결·수용'은 보상 단계입니다.")
+        lines.append("  이 순서가 곧 사업의 진행 흐름입니다.")
+  
     news = a.get("최근뉴스") or []
     if news:
         lines.append("")
