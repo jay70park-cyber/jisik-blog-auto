@@ -25,6 +25,9 @@ import urllib.request
 import urllib.parse
 
 import content_rules as cr
+KST = datetime.timezone(datetime.timedelta(hours=9))
+def today_kst():
+    return datetime.datetime.now(KST).date()
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -145,7 +148,7 @@ def save_history(plan, result):
     """이번 기획을 이력에 남긴다. 오래된 것은 버린다."""
     plans = load_history()
     plans.append({
-        "date": datetime.date.today().isoformat(),
+        "date": today_kst().isoformat(),
         "category": result.get("category_display", ""),
         "keyword": result.get("top_keyword", ""),
         "reader": plan.get("reader", ""),
@@ -176,6 +179,8 @@ def format_history(plans):
         "",
         "위 목록을 보고 아래를 지키세요.",
         "- 최근 3회에 쓴 독자는 고르지 마세요. 매번 같은 독자를 겨냥하면 글이 똑같아집니다.",
+        "- 최근 3회에 쓴 키워드와 같은 소재를 다시 고르지 마세요.",
+        "- 최근 3회에 쓴 독자는 고르지 마세요. 매번 같은 독자를 겨냥하면 글이 똑같아집니다.",
         "- 최근 3회에 쓴 산출물 유형도 피하세요.",
         "- 판단 기준에 이미 쓴 항목(전용률, 입주업종 등)을 그대로 반복하지 마세요.",
         "  같은 주제라도 이번 키워드에서만 나올 수 있는 기준을 찾으세요.",
@@ -192,7 +197,7 @@ def load_council(days=35, limit=8):
     """
     if not os.path.exists(COUNCIL_CSV):
         return []
-    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    since = (today_kst() - datetime.timedelta(days=days)).isoformat()
     rows = []
     with open(COUNCIL_CSV, "r", encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
@@ -220,6 +225,37 @@ def format_council(rows, track):
                 "주제와 닿는 내용이 있으면 소재로 쓰세요. 없으면 무시하세요.\n")
     return head + body + "\n"
 
+def build_agenda_block(result):
+    """collect_sources 가 고른 현안을 프롬프트용 블록으로 만든다.
+
+    지역 트랙에서 소재는 이미 정해져 있다. 모델이 다른 주제로
+    흘러가지 않도록 현안의 현재 상태를 그대로 넘긴다.
+    """
+    a = result.get("agenda")
+    if not a:
+        return ""
+    lines = [
+        "[이번 글의 소재 — 추적 중인 지역 현안]",
+        "이 글은 아래 현안 하나만 다룹니다. 다른 사안으로 넘어가지 마세요.",
+        "",
+        "현안명   : {} ({})".format(a.get("현안명", ""), a.get("분류", "")),
+        "현재 단계 : {}".format(a.get("단계", "") or "미정"),
+        "최근 진전 : {} — {}".format(
+            a.get("최근진전일", "") or "-", a.get("진전내용", "") or "-"),
+    ]
+    if a.get("메모"):
+        lines.append("메모     : " + a["메모"])
+    if a.get("확인필요"):
+        lines.append("확인필요  : {} — 이 항목은 아직 확인되지 않았습니다.".format(a["확인필요"]))
+        lines.append("           단정하지 말고 '아직 정해지지 않았다'로 쓰세요.")
+    news = a.get("최근뉴스") or []
+    if news:
+        lines.append("")
+        lines.append("최근 뉴스 제목 (제목만 있습니다. 본문 내용을 지어내지 마세요)")
+        for n in news[:8]:
+            lines.append("  - {} {}".format(n.get("date", ""), n.get("title", "")))
+    lines.append("")
+    return "\n".join(lines)  
 
 def build_plan_prompt(result, feedback=None, previous=None):
     kw = result["top_keyword"]
@@ -232,6 +268,7 @@ def build_plan_prompt(result, feedback=None, previous=None):
     # 회의록은 정보 전달 트랙에서만 재료로 쓴다.
     # 지산·상가 글에 끼우면 주제가 흐려진다.
     council_block = format_council(load_council(), track) if is_info else ""
+    agenda_block = build_agenda_block(result)
 
     track_note = ""
     if track == "realprice":
@@ -289,6 +326,7 @@ def build_plan_prompt(result, feedback=None, previous=None):
 
 {history}
 {track_note}
+{agenda_block}
 {council_block}
 이 키워드로 글을 쓰기 전에 기획안을 먼저 만드세요. 원칙은 아래와 같습니다.
 
