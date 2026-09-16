@@ -199,7 +199,57 @@ def load_council_rows(days=35, limit=8):
     print("회의록 로드: {}건".format(len(rows[:limit])))
     return rows[:limit]
 
+def build_agenda_material(result):
+    """수집 단계가 고른 현안과 그 고시 연표를 초안 재료로 만든다.
 
+    고시는 기사보다 먼저 나오고 제목에 행정 절차가 그대로 드러난다.
+    한 현안의 고시를 시간순으로 늘어놓으면 그 자체가 연표가 되고,
+    그것이 지역 개발 글 '지금까지의 흐름' 섹션의 1차 재료다.
+    """
+    a = result.get("agenda")
+    if not a:
+        return ""
+    lines = [
+        "[이번 글의 현안 — 추적 중인 지역 이슈]",
+        "현안명   : {} ({})".format(a.get("현안명", ""), a.get("분류", "")),
+        "현재 단계 : {}".format(a.get("단계", "") or "미정"),
+        "최근 진전 : {} — {}".format(
+            a.get("최근진전일", "") or "-", a.get("진전내용", "") or "-"),
+    ]
+    if a.get("메모"):
+        lines.append("메모     : " + a["메모"])
+    if a.get("확인필요"):
+        lines.append("확인필요  : {}".format(a["확인필요"]))
+        lines.append("           이 항목은 확정되지 않았습니다. 단정하지 말고")
+        lines.append("           '아직 정해지지 않았다'로 쓰세요.")
+
+    notices = a.get("관련고시") or []
+    if notices:
+        lines += [
+            "",
+            "■ 화성시 고시·공고 이력 (공고일 순 — 이것이 연표의 뼈대입니다)",
+        ]
+        for n in notices:
+            lines.append("  {} [{}] {}".format(
+                n.get("date", ""), n.get("dept", ""), n.get("title", "")))
+            if n.get("link"):
+                lines.append("        " + n["link"])
+        lines += [
+            "",
+            "  고시 제목의 문구가 곧 행정 절차입니다.",
+            "    열람·의견청취·공람  → 심의 전",
+            "    결정 고시·지형도면   → 확정",
+            "    실시계획 인가        → 착공 직전",
+            "    재결·수용·보상계획   → 보상 단계",
+            "    준공·사용승인        → 완료",
+            "  '지금까지의 흐름' 섹션은 이 목록을 날짜순으로 엮어 만드세요.",
+            "  고시는 확정된 사실입니다. 뉴스보다 먼저 근거로 쓰세요.",
+            "  다만 고시 제목에 없는 내용을 지어내지 마세요.",
+            "  배경 설명이 필요하면 웹 검색으로 확인하고 출처를 밝히세요.",
+        ]
+    lines.append("")
+    return "\n".join(lines)
+    
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
@@ -217,6 +267,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     else:
         realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
+    agenda_material = build_agenda_material(result) if category == "local" else ""
     auction = load_auction_summary() if category == "auction" else ""
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
     refs_rule = ("위에 제공된 참고 링크를 **제목과 URL을 함께** 마크다운 링크 형식으로 나열하세요. "
@@ -467,6 +518,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 {refs_desc}
 
 {realprice_block}
+{agenda_material}
 {news_block}
 {auction_block}
 {council_block}
