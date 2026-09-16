@@ -737,9 +737,9 @@ def _inline_styles(html):
     return html
 
 
-    def render_naver_html(markdown_text, title="블로그 초안", category_display=None,
+def render_naver_html(markdown_text, title="블로그 초안", category_display=None,
                       top_keyword=None, rows=None, table_position="top",
-                      track="jisik", agenda=None):
+                      track="jisik", agenda=None):                    
     """마크다운을 네이버 블로그 붙여넣기에 적합한, 인라인 스타일 기반 HTML로 변환한다."""
     # [이미지: 설명] 표시를 실제 그래프/사진으로 치환 (실패 시 안내 박스로 대체)
     prepped = render_images(markdown_text, rows)
