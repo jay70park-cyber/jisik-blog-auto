@@ -212,9 +212,14 @@ def format_council(rows, track):
     """회의록 요약을 프롬프트용 블록으로 만든다."""
     if not rows:
         return ""
-    body = "\n".join("- {} {} : {}".format(
-        r.get("회의일", ""), r.get("회의명", ""), (r.get("요약") or "")[:200])
-        for r in rows)
+    parts = []
+    for r in rows:
+        parts.append("- {} {} : {}".format(
+            r.get("회의일", ""), r.get("회의명", ""), (r.get("요약") or "")[:200]))
+        link = (r.get("링크") or "").strip()
+        if link:
+            parts.append("    " + link)
+    body = "\n".join(parts)
     if track == "council":
         head = ("[이번 글의 재료 — 최근 한 달 화성특례시의회 회의록]\n"
                 "이 글은 아래 회의록에서만 소재를 고릅니다.\n"
