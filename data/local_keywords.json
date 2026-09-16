@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-01",
+  "updated": "2026-09-16",
   "source": "네이버 뉴스 최근 21일 + 검색어 트렌드 검증",
   "keywords": [
     {
@@ -43,6 +43,14 @@
       "pinned": true
     },
     {
+      "keyword": "동탄 반도체",
+      "first_seen": "2026-08-26",
+      "last_seen": "2026-09-16",
+      "news_count": 5,
+      "trend": 26.66666,
+      "pinned": true
+    },
+    {
       "keyword": "동탄 신도시",
       "first_seen": "2026-08-26",
       "last_seen": "2026-08-26",
@@ -51,19 +59,19 @@
       "pinned": true
     },
     {
-      "keyword": "동탄 집값",
+      "keyword": "동탄 부동산",
       "first_seen": "2026-08-26",
-      "last_seen": "2026-09-01",
-      "news_count": 6,
-      "trend": 17.98396,
+      "last_seen": "2026-09-16",
+      "news_count": 2,
+      "trend": 23.38902,
       "pinned": true
     },
     {
-      "keyword": "동탄 부동산",
+      "keyword": "동탄 집값",
       "first_seen": "2026-08-26",
-      "last_seen": "2026-09-01",
-      "news_count": 3,
-      "trend": 17.42243,
+      "last_seen": "2026-09-16",
+      "news_count": 4,
+      "trend": 20.38946,
       "pinned": true
     },
     {
@@ -72,14 +80,6 @@
       "last_seen": "2026-09-01",
       "news_count": 2,
       "trend": 13.95348,
-      "pinned": true
-    },
-    {
-      "keyword": "동탄 반도체",
-      "first_seen": "2026-08-26",
-      "last_seen": "2026-09-01",
-      "news_count": 5,
-      "trend": 13.33333,
       "pinned": true
     },
     {
