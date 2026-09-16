@@ -65,7 +65,8 @@ AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
 FRESH_DAYS = 14        # 최근진전일이 이 안이면 '진전 있음'
 NEW_GRACE_DAYS = 30    # 추가된 지 이 안이면 신선도 판정 면제
 NEWS_DAYS = 14         # 구글 뉴스를 이 기간만 센다
-NOTICE_DAYS = 365      # 고시는 연표 재료라 길게 본다
+NOTICE_DAYS = 1825     # 고시는 연표 재료다. 시작점이 있어야 흐름이 보인다
+                       # 백필이 부서별로 몇 년치를 가져오므로 넓게 잡는다
 NOTICE_LIMIT = 10      # 한 현안에 붙일 고시 최대 건수
 
 
@@ -354,8 +355,11 @@ def load_notices(agenda_row):
             })
 
     out.sort(key=lambda r: r["date"])
-    # 너무 많으면 최신 쪽을 남긴다. 연표는 뒤쪽이 중요하다.
-    return out[-NOTICE_LIMIT:]
+    if len(out) <= NOTICE_LIMIT:
+        return out
+    # 너무 많으면 최신 쪽을 남기되 가장 오래된 하나는 지킨다.
+    # 그것이 이 현안이 언제 시작됐는지를 보여주는 기준점이다.
+    return [out[0]] + out[-(NOTICE_LIMIT - 1):]
 
 
 def mark_published(agenda_id):
