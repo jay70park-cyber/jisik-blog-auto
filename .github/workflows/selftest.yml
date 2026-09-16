@@ -1,0 +1,81 @@
+name: 자체 점검 (selftest)
+
+# 수동 실행 전용. 상태 파일을 건드리지 않고 외부 호출도 하지 않는다.
+# 환경변수는 모듈 최상단에서 읽기만 하므로 더미 값으로 채운다.
+on:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+
+    env:
+      NAVER_CLIENT_ID: dummy
+      NAVER_CLIENT_SECRET: dummy
+      ANTHROPIC_API_KEY: dummy
+      TELEGRAM_BOT_TOKEN: dummy
+      TELEGRAM_CHAT_ID: "0"
+      UNSPLASH_ACCESS_KEY: ""
+      CALC_URL: https://example.invalid/
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 한글 폰트 설치
+        # make_thumbnail 이 폰트를 불러오는 경우가 있어 미리 깔아둔다
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-nanum
+          fc-cache -f
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install markdown matplotlib pillow requests
+          fi
+
+      - name: 변경 전 상태 기록
+        # 테스트가 상태 파일을 건드리지 않는지 전후로 대조한다
+        run: |
+          mkdir -p state
+          echo "--- state 디렉터리 ---"
+          ls -la state/ || true
+          echo "--- 아젠다 포인터 ---"
+          cat state/agenda_last_id.txt 2>/dev/null || echo "(없음)"
+          echo "--- 월요일 순환 인덱스 ---"
+          cat state/rotation_index.txt 2>/dev/null || echo "(없음)"
+          find state data -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/before.txt
+          cat /tmp/before.txt
+
+      - name: 자체 점검 실행
+        run: python selftest.py
+
+      - name: 상태 파일이 바뀌지 않았는지 확인
+        if: always()
+        run: |
+          find state data -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/after.txt
+          if diff -u /tmp/before.txt /tmp/after.txt; then
+            echo "상태 파일 변경 없음 — 정상"
+          else
+            echo "::error::테스트가 상태 파일을 변경했습니다. 위 diff를 확인하세요."
+            exit 1
+          fi
+
+      - name: git 작업트리 정리 상태 확인
+        if: always()
+        run: |
+          git status --porcelain
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::warning::커밋되지 않은 변경이 생겼습니다."
+          else
+            echo "작업트리 깨끗함"
+          fi
