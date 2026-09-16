@@ -212,6 +212,46 @@ jobs:
 
 
           # ─────────────────────────────────────────────
+          section("2-2. hscity_notices.csv 진단")
+          # ─────────────────────────────────────────────
+          npath = os.path.join("data", "hscity_notices.csv")
+          if not os.path.exists(npath):
+              check(False, "파일 존재: " + npath)
+          else:
+              with open(npath, encoding="utf-8-sig", newline="") as f:
+                  nrows = list(csv.DictReader(f))
+              check(len(nrows) > 0, "고시 누적 {}건".format(len(nrows)))
+
+              dates = sorted((r.get("공고일자") or "").strip() for r in nrows
+                             if (r.get("공고일자") or "").strip())
+              if dates:
+                  print("      공고일 범위: {} ~ {}".format(dates[0], dates[-1]))
+                  old_cnt = sum(1 for d in dates if d < "2025-09-17")
+                  print("      1년 이전 건수: {} (NOTICE_DAYS=365 면 전부 잘림)".format(old_cnt))
+
+              tagged = sum(1 for r in nrows if (r.get("현안") or "").strip())
+              print("      현안 태그가 붙은 행: {}건".format(tagged))
+
+              # 현안별로 실제 몇 건이 걸리는지 — load_notices 를 그대로 쓴다
+              print("\n      [현안별 고시 연표]")
+              total = 0
+              with open(os.path.join("data", "local_agenda.csv"),
+                        encoding="utf-8-sig", newline="") as f:
+                  for r in csv.DictReader(f):
+                      hits = cs.load_notices(r)
+                      total += len(hits)
+                      mark = "○" if hits else "×"
+                      print("      {} {} {:<16} {}건".format(
+                          mark, r.get("id", ""), (r.get("현안명") or "")[:16], len(hits)))
+                      for h in hits[:3]:
+                          print("            {} {}".format(h["date"], h["title"][:46]))
+                      if len(hits) > 3:
+                          print("            … 외 {}건".format(len(hits) - 3))
+              check(total > 0, "현안에 걸린 고시 총 {}건".format(total))
+              print("      (0건이면 backfill 미반영이거나 키워드가 고시 제목과 안 맞는 것입니다)")
+
+
+          # ─────────────────────────────────────────────
           section("3. 트랙 배정 (앞으로 10개 목요일)")
           # ─────────────────────────────────────────────
           d = cs.today_kst()
@@ -337,6 +377,70 @@ jobs:
           check("판단 도구입니다" in p_jisik, "지산 트랙은 판단 도구 원칙 유지")
 
           check(hasattr(gd, "today_kst"), "generate_draft 에 today_kst 있음")
+
+
+          # ─────────────────────────────────────────────
+          section("6-2. 근거 링크가 프롬프트에 실리는가")
+          # ─────────────────────────────────────────────
+          # 회의록 링크를 안 넘기면 모델은 근거를 달 방법이 없다.
+          # 지어내는 것은 금지되어 있으므로 결과는 링크 없는 글이 된다.
+
+          fake_rows = [{
+              "회의일": "2026-09-03", "회의명": "도시건설위원회",
+              "요약": "트램 6차 유찰, 720억 증액",
+              "링크": "https://council.hscity.go.kr/cnts/mnt/mntsViewer.php?schSn=7717",
+          }]
+
+          blk = cr.build_council_section(fake_rows)
+          check("mntsViewer.php?schSn=7717" in blk,
+                "build_council_section 이 회의록 링크를 넘김")
+          check("인용부호(>)" in blk or "근거" in blk,
+                "회의록 섹션 규칙에 근거 표기 지시 있음")
+
+          # 실제 CSV 로 만든 블록에도 링크가 들어가는지
+          real_rows = gd.load_council_rows()
+          if real_rows:
+              real_blk = cr.build_council_section(real_rows)
+              check("council.hscity.go.kr" in real_blk,
+                    "실제 회의록 {}건에 링크 포함".format(len(real_rows)))
+          else:
+              print("      (회의록 데이터가 없어 실제 검사는 건너뜁니다)")
+
+          # 구조에 링크 지시가 있는가 — local 과 council 양쪽
+          st_local = cr.build_info_structure("local", "참고링크 규칙", blk)
+          st_council = cr.build_info_structure("council", "참고링크 규칙", blk)
+
+          check("인용부호(>)" in st_local, "local 구조에 근거 링크 지시 있음")
+          check("council.hscity.go.kr" in st_council, "council 구조에 회의록 링크 지시 있음")
+
+          # 기획 단계도
+          p_plan = gp.format_council(fake_rows, "local")
+          check("mntsViewer.php?schSn=7717" in p_plan,
+                "generate_plan.format_council 이 링크를 넘김")
+
+          # 초안 프롬프트 전체에 링크가 실리는지 (end-to-end)
+          if "council.hscity.go.kr" in p_local:
+              check(True, "local 초안 프롬프트에 회의록 링크 실림")
+          else:
+              check(bool(real_rows) is False,
+                    "local 초안 프롬프트에 회의록 링크 실림 (회의록 없으면 면제)")
+
+          # 고시 연표 쪽
+          fake_notice = dict(fake_local)
+          fake_notice["agenda"] = dict(fake_local["agenda"])
+          fake_notice["agenda"]["관련고시"] = [{
+              "date": "2026-04-12", "title": "동탄도시철도 1단계 실시계획 인가 고시",
+              "dept": "트램건설추진단", "board": "고시",
+              "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=1",
+          }]
+          if check(hasattr(gd, "build_agenda_material"), "build_agenda_material 함수 있음"):
+              mat = gd.build_agenda_material(fake_notice)
+              check("BD_selectNoticeDetail" in mat, "고시 링크가 초안 재료에 들어감")
+              check("실시계획 인가" in mat, "고시 제목이 초안 재료에 들어감")
+
+              p2 = gd.build_prompt(fake_notice, [], today, plan=plan_local, category="local")
+              check("BD_selectNoticeDetail" in p2,
+                    "초안 프롬프트에 고시 링크 실림 ({agenda_material} 삽입 확인)")
 
 
           # ─────────────────────────────────────────────
