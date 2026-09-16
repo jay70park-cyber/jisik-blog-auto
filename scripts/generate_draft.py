@@ -775,7 +775,7 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
     # 제목(H1) 바로 다음에, 주제 소개 문구 + 근거 표를 자동 삽입 (Claude가 아닌 코드가 직접 생성 -> 매주 정확함)
     # 카테고리명은 블로그 카테고리로 이미 구분되므로 문장에 넣지 않고, 데이터 근거만 자연스럽게 밝힌다.
     intro_html = ""
-    if top_keyword:
+        if top_keyword:
         table_html = build_score_table_html(rows) if rows else ""
         if table_position == "bottom":
             # 관심도 표는 독자 의사결정에 직접 쓰이지 않으므로 글 맨 아래로 보낸다
@@ -805,6 +805,7 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
                 "놓치기 쉬운 고려사항을 정리해 봤습니다."
             )
         intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
+        body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
