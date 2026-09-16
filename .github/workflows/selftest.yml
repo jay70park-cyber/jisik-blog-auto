@@ -250,6 +250,39 @@ jobs:
               check(total > 0, "현안에 걸린 고시 총 {}건".format(total))
               print("      (0건이면 backfill 미반영이거나 키워드가 고시 제목과 안 맞는 것입니다)")
 
+              # ── 키워드 후보 찾기 ──────────────────────────
+              # 누적 고시에서 현안과 닿을 법한 제목을 역으로 뽑는다.
+              # 현안명을 쪼갠 낱말이나 관련어가 들어간 제목을 보여주면
+              # 어떤 키워드를 넣어야 걸리는지 사람이 바로 판단할 수 있다.
+              PROBE = {
+                  "트램": ["트램", "도시철도", "노면전차"],
+                  "고려대병원 건립": ["의료", "병원", "대학", "종합의료"],
+                  "유통3부지 용도전환": ["유통", "장지동", "업무설비"],
+                  "GTX-A": ["GTX", "광역급행", "환승", "동탄역"],
+                  "용인 반도체 국가산단": ["반도체", "국가산단", "첨단"],
+                  "용인반도체 연결도로": ["84호선", "국지도", "도로구역", "중동", "서리"],
+              }
+              print("\n      [키워드 후보 — 누적 고시에서 역으로 찾기]")
+              for issue, probes in PROBE.items():
+                  found = []
+                  for r in nrows:
+                      t = (r.get("제목") or "").strip()
+                      if any(p in t for p in probes):
+                          found.append((r.get("공고일자", ""), r.get("부서", ""), t))
+                  found.sort()
+                  print("\n      ■ {} — 후보 {}건".format(issue, len(found)))
+                  for d, dept, t in found[-6:]:
+                      print("         {} [{}] {}".format(d, dept, t[:58]))
+                  if not found:
+                      print("         (관련 고시가 누적에 없습니다)")
+
+              # 어느 부서 고시가 많이 쌓였는지 — 백필 범위 점검용
+              from collections import Counter
+              cnt = Counter((r.get("부서") or "").strip() for r in nrows)
+              print("\n      [부서별 누적 건수 상위 12]")
+              for dept, c in cnt.most_common(12):
+                  print("         {:<20} {}건".format(dept or "(없음)", c))
+
 
           # ─────────────────────────────────────────────
           section("3. 트랙 배정 (앞으로 10개 목요일)")
