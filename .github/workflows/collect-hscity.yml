@@ -7,6 +7,12 @@ on:
         description: '누적분으로 현안 단계 채우기 (최초 1회만)'
         type: boolean
         default: false
+      start_page:
+        description: '백필 시작 페이지'
+        default: '1'
+      end_page:
+        description: '백필 끝 페이지'
+        default: '60'
   schedule:
     - cron: '10 22 * * *'    # 1차: 07:10 KST
     - cron: '40 0 * * *'     # 백업: 09:40 KST — 1차가 밀리거나 스킵되면 실행
@@ -18,9 +24,10 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
       LANG: C.UTF-8
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -45,7 +52,9 @@ jobs:
         if: steps.guard.outputs.should_run == 'true'
         run: |
           if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
-            python3 scripts/collect_hscity.py --backfill
+            python3 scripts/collect_hscity.py --backfill \
+              --start=${{ github.event.inputs.start_page || '1' }} \
+              --pages=${{ github.event.inputs.end_page || '60' }}
           else
             python3 scripts/collect_hscity.py
           fi
