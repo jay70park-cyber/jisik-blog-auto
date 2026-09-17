@@ -508,6 +508,8 @@ def main():
             "키워드": agenda.get("키워드", ""),
             "메모": agenda.get("메모", ""),
             "확인필요": agenda.get("확인필요", ""),
+            "위도": agenda.get("위도", ""),
+            "경도": agenda.get("경도", ""),
             "선정사유": agenda.get("_why", ""),
             "최근뉴스": [{"date": d, "title": t} for d, t in agenda.get("_news", [])[:8]],
             "관련고시": load_notices(agenda),
