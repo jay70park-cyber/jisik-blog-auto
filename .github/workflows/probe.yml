@@ -48,13 +48,21 @@ jobs:
                 "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 
           # 국내 지자체 게시판이 흔히 쓰는 이름들
-          PAGE_KEYS = [
-              "q_currPage", "q_curPage", "q_pageIndex", "q_currentPage",
-              "currPage", "curPage", "pageIndex", "currentPage", "page",
-              "q_pageNo", "pageNo", "q_nowPage", "nowPage",
-              "pageUnit", "q_rowPerPage", "q_listScale",
-              "cPage", "c_page", "startPage", "q_startPage",
-          ]
+          # 1차 탐색에서 hidden 필드로 확인된 것들.
+          # q_currPage 는 폼에 있는데도 단독으로는 안 먹었다.
+          # 서버가 폼 전체를 받아야 판단하는 구조로 보인다.
+          FORM_BASE = {
+              "q_cp": "",
+              "q_notAncmtSeCode": "01",
+              "q_notAncmtMgtNo": "",
+              "q_currPage": "1",
+              "sort": "DATE",
+              "query": "",
+              "q_searchType": "",
+              "collection": "",
+          }
+
+          PAGE_KEYS = ["q_cp", "q_currPage", "q_pageIndex", "q_pageNo", "page"]
 
           # 페이지 대신 '한 번에 많이' 가 되는 경우도 있다
           SIZE_KEYS = ["q_rowPerPage", "q_listScale", "pageSize", "q_pageSize",
@@ -150,95 +158,140 @@ jobs:
                   print("  function {}({})".format(m.group(1), m.group(2)))
 
 
+          def try_form(label, overrides, base):
+              """폼 전체를 보내고 결과가 1페이지와 달라졌는지 본다."""
+              params = dict(FORM_BASE)
+              params.update(overrides)
+              got = post(params)
+              nums = numbers(got)
+              if not nums:
+                  print("  {:<38} 목록 없음".format(label))
+                  return None
+              if nums == base:
+                  print("  {:<38} 동일".format(label))
+                  return None
+              print("  {:<38} ★ 달라짐 {}건 | {}".format(
+                  label, len(nums), first_title(got)))
+              return nums
+
+
           def main():
-              print("=" * 58)
-              print("1페이지 기준 잡기")
-              print("=" * 58)
-              base_html = get()
+              print("=" * 62)
+              print("1페이지 기준 — 폼 전체를 그대로 보낸 결과")
+              print("=" * 62)
+              base_html = post(FORM_BASE)
               base = numbers(base_html)
               if not base:
-                  print("목록을 못 읽었습니다. 화면 구조가 바뀌었을 수 있습니다.")
+                  print("  폼 POST 로는 목록을 못 읽었습니다. GET 으로 기준을 잡습니다.")
+                  base_html = get()
+                  base = numbers(base_html)
+              if not base:
+                  print("목록을 못 읽었습니다.")
                   print(base_html[:800])
                   return
               print("  고시번호 {}개".format(len(base)))
               print("  첫 행: {}".format(first_title(base_html)))
-              print("  지문: {}".format(base[:3]))
 
-              show_form(base_html)
-
-              print("\n" + "=" * 58)
-              print("페이지 파라미터 후보 시험 (POST)")
-              print("=" * 58)
               hits = []
+
+              print("\n" + "=" * 62)
+              print("A. 폼 전체 + 페이지 값 하나만 2로")
+              print("=" * 62)
               for key in PAGE_KEYS:
-                  got = post({key: "2"})
-                  nums = numbers(got)
-                  if not nums:
-                      print("  {:<18} 목록 없음".format(key))
-                  elif nums == base:
-                      print("  {:<18} 1페이지와 동일".format(key))
-                  else:
-                      print("  {:<18} ★ 달라짐! 첫 행: {}".format(
-                          key, first_title(got)))
-                      hits.append(("POST", key, nums))
+                  r = try_form("{} = 2".format(key), {key: "2"}, base)
+                  if r:
+                      hits.append(("폼+" + key, r))
                   time.sleep(0.6)
 
-              print("\n" + "=" * 58)
-              print("페이지 파라미터 후보 시험 (GET)")
-              print("=" * 58)
-              for key in PAGE_KEYS:
-                  got = get({key: "2"})
-                  nums = numbers(got)
-                  if not nums:
-                      print("  {:<18} 목록 없음".format(key))
-                  elif nums == base:
-                      print("  {:<18} 1페이지와 동일".format(key))
-                  else:
-                      print("  {:<18} ★ 달라짐! 첫 행: {}".format(
-                          key, first_title(got)))
-                      hits.append(("GET", key, nums))
+              print("\n" + "=" * 62)
+              print("B. q_cp 와 q_currPage 를 함께")
+              print("=" * 62)
+              for a, b in [("2", "2"), ("2", "1"), ("1", "2"), ("10", "2"), ("11", "2")]:
+                  r = try_form("q_cp={} q_currPage={}".format(a, b),
+                               {"q_cp": a, "q_currPage": b}, base)
+                  if r:
+                      hits.append(("q_cp={} q_currPage={}".format(a, b), r))
                   time.sleep(0.6)
 
-              print("\n" + "=" * 58)
-              print("한 번에 많이 받기 시험")
-              print("=" * 58)
-              for key in SIZE_KEYS:
-                  got = post({key: "100"})
-                  nums = numbers(got)
-                  if nums and len(nums) > len(base):
-                      print("  {:<18} ★ {}건으로 늘어남!".format(key, len(nums)))
-                      hits.append(("SIZE", key, nums))
-                  else:
-                      print("  {:<18} {}건 (변화 없음)".format(key, len(nums)))
+              print("\n" + "=" * 62)
+              print("C. q_cp 를 행 오프셋으로 (10, 20 …)")
+              print("=" * 62)
+              for v in ["0", "10", "11", "20", "21"]:
+                  r = try_form("q_cp = {}".format(v), {"q_cp": v}, base)
+                  if r:
+                      hits.append(("q_cp=" + v, r))
                   time.sleep(0.6)
 
-              print("\n" + "=" * 58)
-              print("검색어 파라미터 시험 — '유통' 으로 찾아본다")
-              print("=" * 58)
-              for key in ["q_searchVal", "q_searchKeyword", "searchKeyword",
-                          "q_searchWrd", "searchWrd", "q_sword", "sword",
-                          "q_title", "q_subject", "keyword"]:
-                  got = post({key: "유통"})
-                  nums = numbers(got)
-                  t = first_title(got)
-                  if nums and nums != base:
-                      print("  {:<18} ★ 달라짐 ({}건) 첫 행: {}".format(key, len(nums), t))
-                      hits.append(("SEARCH", key, nums))
-                  else:
-                      print("  {:<18} 변화 없음".format(key))
+              print("\n" + "=" * 62)
+              print("D. 검색 — query + q_searchType 조합")
+              print("=" * 62)
+              for st in ["", "title", "TITLE", "subject", "all", "ALL", "1", "0"]:
+                  r = try_form("query=유통 q_searchType={!r}".format(st),
+                               {"query": "유통", "q_searchType": st}, base)
+                  if r:
+                      hits.append(("query+q_searchType=" + st, r))
                   time.sleep(0.6)
 
-              print("\n" + "=" * 58)
+              print("\n" + "=" * 62)
+              print("E. 게시판 구분 q_notAncmtSeCode 바꿔보기")
+              print("=" * 62)
+              for v in ["02", "03", "00", "10"]:
+                  r = try_form("q_notAncmtSeCode = {}".format(v),
+                               {"q_notAncmtSeCode": v}, base)
+                  if r:
+                      hits.append(("q_notAncmtSeCode=" + v, r))
+                  time.sleep(0.6)
+
+              print("\n" + "=" * 62)
+              print("F. 정렬 바꾸기 — 되면 서버가 폼을 읽고 있다는 증거")
+              print("=" * 62)
+              for v in ["TITLE", "NUM", "ASC", "DATE_ASC", "RANK"]:
+                  r = try_form("sort = {}".format(v), {"sort": v}, base)
+                  if r:
+                      hits.append(("sort=" + v, r))
+                  time.sleep(0.6)
+
+              print("\n" + "=" * 62)
+              print("G. 페이지 링크의 실제 HTML — 눈으로 확인")
+              print("=" * 62)
+              # 페이지 번호가 있는 영역을 통째로 찍는다
+              for pat in [r'<div[^>]*(?:paging|pagination|page_wrap|pageing)[^>]*>.*?</div>',
+                          r'<ul[^>]*(?:paging|pagination)[^>]*>.*?</ul>',
+                          r'<nav[^>]*>.*?</nav>']:
+                  for m in re.finditer(pat, base_html, re.S | re.I):
+                      seg = re.sub(r"\s+", " ", m.group(0))
+                      if len(seg) > 60:
+                          print("  " + seg[:1200])
+                          print()
+                          break
+
+              # 숫자 2가 들어간 앵커 태그를 전부 찾는다
+              print("  --- 숫자 링크 태그 ---")
+              shown = 0
+              for m in re.finditer(r"<a[^>]*>\s*2\s*</a>", base_html, re.I):
+                  print("  " + re.sub(r"\s+", " ", m.group(0))[:200])
+                  shown += 1
+                  if shown >= 3:
+                      break
+              if not shown:
+                  for m in re.finditer(r"<a[^>]{0,200}>", base_html, re.I):
+                      tag = m.group(0)
+                      if any(w in tag.lower() for w in ["page", "cp=", "next", "다음"]):
+                          print("  " + re.sub(r"\s+", " ", tag)[:200])
+                          shown += 1
+                          if shown >= 8:
+                              break
+              if not shown:
+                  print("  (숫자 링크를 못 찾았습니다 — 스크립트로 그리는 구조일 수 있습니다)")
+
+              print("\n" + "=" * 62)
               print("결과")
-              print("=" * 58)
+              print("=" * 62)
               if hits:
-                  for kind, key, nums in hits:
-                      print("  {} {} → {}건, 지문 {}".format(kind, key, len(nums), nums[:3]))
-                  print("\n  위 이름을 collect_hscity.py 의 fetch_dept() 에 넣으면 됩니다.")
+                  for label, nums in hits:
+                      print("  ★ {} → {}건 | {}".format(label, len(nums), nums[:2]))
               else:
-                  print("  먹히는 이름을 못 찾았습니다.")
-                  print("  위의 hidden 필드 목록과 페이지 이동 스크립트를 보고")
-                  print("  거기 나온 이름을 후보에 추가해 다시 돌려보세요.")
+                  print("  아직 못 찾았습니다. 위 G 섹션의 링크 HTML 을 보내주세요.")
 
 
           if __name__ == "__main__":
