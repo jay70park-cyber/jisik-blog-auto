@@ -20,6 +20,7 @@ import os
 import csv
 import json
 import time
+import urllib.error
 import datetime
 import urllib.request
 import urllib.parse
@@ -104,24 +105,64 @@ def is_approval(text):
     return False
 
 
-def call_claude(prompt, timeout=120):
-    url = "https://api.anthropic.com/v1/messages"
-    body = json.dumps(
-        {"model": MODEL, "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}]},
-        ensure_ascii=False,
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body, method="POST",
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as res:
-        data = json.load(res)
-    return "".join(p.get("text", "") for p in data.get("content", []) if p.get("type") == "text")
+def call_claude(prompt, timeout=120, retries=2):
+    """기획안을 받아온다.
 
+    빈 응답이 났을 때 원인을 알 수 있어야 한다.
+    200 으로 오고도 text 블록이 없는 경우가 있어,
+    stop_reason 과 블록 종류를 항상 남긴다.
+    """
+    url = "https://api.anthropic.com/v1/messages"
+    print("프롬프트 길이: {:,}자".format(len(prompt)))
+
+    for attempt in range(1, retries + 1):
+        body = json.dumps(
+            {"model": MODEL, "max_tokens": 4000,
+             "messages": [{"role": "user", "content": prompt}]},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                data = json.load(res)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")
+            print("API 오류 {} ({}/{}): {}".format(
+                e.code, attempt, retries, detail[:400]), flush=True)
+            if attempt < retries:
+                time.sleep(attempt * 5)
+                continue
+            raise
+
+        parts = data.get("content", [])
+        text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+
+        print("stop_reason: {} / 블록: {} / 텍스트 {}자".format(
+            data.get("stop_reason"),
+            [p.get("type") for p in parts],
+            len(text)), flush=True)
+        usage = data.get("usage") or {}
+        if usage:
+            print("토큰: 입력 {} / 출력 {}".format(
+                usage.get("input_tokens"), usage.get("output_tokens")), flush=True)
+
+        if text.strip():
+            return text
+
+        # 비어 있으면 응답 원문을 남긴다. 다음에 같은 일이 나면 이 기록으로 판단한다.
+        print("빈 응답 ({}/{}). 원문 앞부분:".format(attempt, retries), flush=True)
+        print(json.dumps(data, ensure_ascii=False)[:800], flush=True)
+        if attempt < retries:
+            time.sleep(attempt * 5)
+
+    return ""
 
 def parse_json(text):
     if not text or not text.strip():
@@ -270,9 +311,9 @@ def build_agenda_block(result):
     notices = a.get("관련고시") or []
     if notices:
         lines.append("")
-        lines.append("이 현안으로 나온 화성시 고시·공고 (공고일 순)")
-        for n in notices:
-            lines.append("  - {} [{}] {}".format(
+        lines.append("이 현안으로 나온 화성시 고시·공고 (공고일 순, 최근 5건)")
+        for n in notices[-5:]:
+        lines.append("  - {} [{}] {}".format(
                 n.get("date", ""), n.get("dept", ""), n.get("title", "")))
         lines.append("")
         lines.append("  고시 제목에는 행정 절차가 그대로 드러납니다.")
