@@ -149,7 +149,7 @@ jobs:
               print("      (가운데 칸은 그 줄의 들여쓰기 칸 수입니다)\n")
 
 
-          for name in ["content_rules", "collect_sources", "generate_plan", "generate_draft"]:
+          for name in ["content_rules", "collect_sources", "generate_plan", "generate_draft", "make_map"]:
               try:
                   importlib.import_module(name)
                   check(True, name)
@@ -167,13 +167,18 @@ jobs:
           import collect_sources as cs
           import generate_plan as gp
           import generate_draft as gd
+          try:
+              import make_map
+          except Exception:
+              make_map = None
 
 
           # ─────────────────────────────────────────────
           section("2. local_agenda.csv 스키마")
           # ─────────────────────────────────────────────
           NEED = ["id", "상태", "현안명", "분류", "단계", "최근진전일", "진전내용",
-                  "중요도", "출처", "키워드", "메모", "확인필요", "추가일", "마지막발행일"]
+                  "중요도", "출처", "키워드", "메모", "확인필요", "추가일", "마지막발행일",
+                  "위도", "경도"]
 
           path = os.path.join("data", "local_agenda.csv")
           if check(os.path.exists(path), "파일 존재: " + path):
@@ -182,7 +187,7 @@ jobs:
                   cols = rd.fieldnames or []
                   rows = list(rd)
               missing = [c for c in NEED if c not in cols]
-              check(not missing, "필수 열 14개 — 누락: {}".format(missing or "없음"))
+              check(not missing, "필수 열 16개 — 누락: {}".format(missing or "없음"))
               check(len(rows) > 0, "데이터 행 {}건".format(len(rows)))
 
               bad_len = [r.get("id") for r in rows if len(r) != len(cols) or None in r.values()]
@@ -505,6 +510,53 @@ jobs:
               p2 = gd.build_prompt(fake_notice, [], today, plan=plan_local, category="local")
               check("BD_selectNoticeDetail" in p2,
                     "초안 프롬프트에 고시 링크 실림 ({agenda_material} 삽입 확인)")
+
+
+          # ─────────────────────────────────────────────
+          section("6-3. 위치 개념도")
+          # ─────────────────────────────────────────────
+          if make_map is None:
+              check(False, "make_map 모듈을 못 읽었습니다")
+          else:
+              with open(os.path.join("data", "local_agenda.csv"),
+                        encoding="utf-8-sig", newline="") as f:
+                  agrows = list(csv.DictReader(f))
+
+              withpt = [r for r in agrows if make_map.parse_point(r)]
+              check(len(withpt) > 0, "좌표가 있는 현안 {}/{}건".format(
+                  len(withpt), len(agrows)))
+              for r in agrows:
+                  pt = make_map.parse_point(r)
+                  if pt:
+                      km = make_map.dist_km(37.2007, 127.0966, pt[0], pt[1])
+                      print("      O {} {:<16} {:.4f}, {:.4f}  동탄역 {:.1f}km".format(
+                          r["id"], r["현안명"], pt[0], pt[1], km))
+                  else:
+                      print("      . {} {:<16} 좌표 없음 — 지도 생략".format(
+                          r["id"], r["현안명"]))
+
+              if withpt:
+                  fig = make_map.build_map_figure(withpt[0])
+                  check(fig.startswith("<figure"), "지도 HTML 생성됨")
+                  check("data:image/png;base64," in fig, "PNG 이미지가 들어감")
+                  check("개념도" in fig, "개념도 캡션 포함")
+                  print("      생성 크기: {:,}자".format(len(fig)))
+
+              # 좌표가 없으면 조용히 건너뛰는지
+              check(make_map.build_map_figure({"현안명": "좌표없음"}) == "",
+                    "좌표 없으면 빈 문자열")
+              check(make_map.build_map_figure(None) == "", "agenda 없으면 빈 문자열")
+
+              # 초안 삽입 경로
+              md = "# 제목\n\n## 지금까지의 흐름\n\n내용\n"
+              if withpt:
+                  html = gd.render_naver_html(md, top_keyword="테스트", rows=None,
+                                              track="local", agenda=withpt[0])
+                  check("data:image/png;base64," in html, "local 초안에 지도 삽입됨")
+                  html2 = gd.render_naver_html(md, top_keyword="테스트", rows=None,
+                                               track="jisik")
+                  check("data:image/png;base64," not in html2,
+                        "지산 트랙에는 지도 안 붙음")
 
 
           # ─────────────────────────────────────────────
