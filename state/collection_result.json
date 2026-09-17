@@ -9,34 +9,112 @@
   },
   "rows": [
     {
-      "keyword": "도시철도",
-      "blog": 1714848,
-      "cafe": 870642,
-      "trend": 22.93906,
-      "score": 0.979
+      "keyword": "공동주택",
+      "blog": 3598959,
+      "cafe": 2182506,
+      "trend": 44.76439,
+      "score": 0.724
     },
     {
-      "keyword": "트램",
-      "blog": 1010619,
-      "cafe": 364731,
-      "trend": 23.93206,
-      "score": 0.761
+      "keyword": "주택건설사업계획",
+      "blog": 931911,
+      "cafe": 528791,
+      "trend": 100.0,
+      "score": 0.626
+    },
+    {
+      "keyword": "동탄 주택공급",
+      "blog": 173087,
+      "cafe": 275830,
+      "trend": 0.0,
+      "score": 0.04
     }
   ],
-  "top_keyword": "트램",
+  "top_keyword": "동탄 주택공급",
   "agenda": {
-    "id": "A001",
-    "현안명": "트램",
-    "분류": "교통",
-    "단계": "착공준비",
-    "최근진전일": "2026-09-08",
-    "진전내용": "[의회] 동탄트램 1단계는 입찰자 기술제안서 접수 상태에서 3주간 적격심사를 진행하고 10월 중 우선시공분 및 실시설계 착수 예정이며 2027년 하반기",
+    "id": "A007",
+    "현안명": "동탄 주택공급",
+    "분류": "개발",
+    "단계": "공사중",
+    "최근진전일": "2026-08-27",
+    "진전내용": "화성능동지구 A-1BL 공공지원 민간임대리츠 주택건설사업계획 변경(5차) 승인",
     "중요도": "상",
-    "키워드": "트램|도시철도",
-    "메모": "심의 통과시 10월 계약·연내 우선시공분 착공",
-    "확인필요": "회의록 반영",
-    "선정사유": "신규 안건 (추가 1일 경과)",
+    "키워드": "주택건설사업계획|공동주택|민간임대리츠|입주자모집|분양승인",
+    "메모": "배후 주거 공급이 임차 기업 인력 확보에 주는 영향으로 각도를 틀 것",
+    "확인필요": "",
+    "선정사유": "신규 안건 (추가 0일 경과)",
     "최근뉴스": [],
-    "관련고시": []
+    "관련고시": [
+      {
+        "date": "2025-09-03",
+        "title": "주택건설사업계획 변경(2차)승인 고시 [구포지구 비봉지역주택조합]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=136872"
+      },
+      {
+        "date": "2026-06-29",
+        "title": "주택건설사업계획변경(2차) 승인 고시[동탄(2)BD2블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=147680"
+      },
+      {
+        "date": "2026-07-07",
+        "title": "주택건설사업계획변경(5차)승인 고시[향남2지구 B-16블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=147901"
+      },
+      {
+        "date": "2026-07-22",
+        "title": "주택건설사업계획 변경(3차)승인 고시[동화2지구지역주택조합]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=148366"
+      },
+      {
+        "date": "2026-08-10",
+        "title": "주택건설사업계획 변경(2차) 승인 고시 [화성동탄(2) B12블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=148905"
+      },
+      {
+        "date": "2026-08-12",
+        "title": "주택건설사업계획 변경(4차) 승인 고시 [화성동탄(2) B11블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=149000"
+      },
+      {
+        "date": "2026-08-19",
+        "title": "주택건설사업계획 변경(1차) 승인 고시[상신3지구]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=149184"
+      },
+      {
+        "date": "2026-08-27",
+        "title": "주택건설사업계획 변경(5차) 승인 고시[화성능동지구 A-1BL 공공지원 민간임대리츠]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=149402"
+      },
+      {
+        "date": "2026-09-03",
+        "title": "주택건설사업계획 변경(2차) 승인 고시 [하길지구 A-1블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=149636"
+      },
+      {
+        "date": "2026-09-09",
+        "title": "주택건설사업계획변경(5차)승인 고시[남양뉴타운 B-16블록]",
+        "dept": "주택정책과",
+        "board": "고시",
+        "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=149694"
+      }
+    ]
   }
 }
