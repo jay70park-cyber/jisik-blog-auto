@@ -1,0 +1,565 @@
+name: 자체 점검 (selftest)
+
+# 수동 실행 전용. 상태 파일을 건드리지 않고 외부 호출도 하지 않는다.
+# 모듈과 데이터 위치를 스스로 찾으므로 저장소 구조가 바뀌어도 동작한다.
+on:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+
+    env:
+      NAVER_CLIENT_ID: dummy
+      NAVER_CLIENT_SECRET: dummy
+      ANTHROPIC_API_KEY: dummy
+      TELEGRAM_BOT_TOKEN: dummy
+      TELEGRAM_CHAT_ID: "0"
+      UNSPLASH_ACCESS_KEY: ""
+      CALC_URL: https://example.invalid/
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 저장소 구조 확인
+        run: |
+          echo "--- 파이썬 파일 ---"
+          find . -name '*.py' -not -path './.git/*' | sort
+          echo "--- 데이터 / 상태 ---"
+          find . \( -name 'local_agenda.csv' -o -name 'council_minutes.csv' \
+                    -o -name 'agenda_last_id.txt' -o -name 'rotation_index.txt' \) \
+               -not -path './.git/*' | sort
+
+      - name: 경로 자동 탐지
+        run: |
+          set -e
+          MOD=$(find . -name collect_sources.py -not -path './.git/*' | head -1)
+          if [ -z "$MOD" ]; then
+            echo "::error::collect_sources.py 를 찾지 못했습니다."
+            exit 1
+          fi
+          MODDIR=$(cd "$(dirname "$MOD")" && pwd)
+
+          # 스크립트들은 data/ 와 state/ 를 현재 작업 디렉터리 기준 상대경로로 읽는다.
+          # local_agenda.csv 가 있는 data/ 의 부모를 작업 디렉터리로 삼는다.
+          AG=$(find . -name local_agenda.csv -not -path './.git/*' | head -1)
+          if [ -n "$AG" ]; then
+            RUNDIR=$(cd "$(dirname "$(dirname "$AG")")" && pwd)
+          else
+            echo "::warning::local_agenda.csv 를 못 찾아 모듈 위치를 작업 디렉터리로 씁니다."
+            RUNDIR="$MODDIR"
+          fi
+
+          echo "MODDIR=$MODDIR" >> $GITHUB_ENV
+          echo "RUNDIR=$RUNDIR" >> $GITHUB_ENV
+          echo "모듈 위치 : $MODDIR"
+          echo "작업 위치 : $RUNDIR"
+
+      - name: 한글 폰트 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-nanum
+          fc-cache -f
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          REQ=$(find . -name requirements.txt -not -path './.git/*' | head -1)
+          if [ -n "$REQ" ]; then
+            echo "requirements 사용: $REQ"
+            pip install -r "$REQ"
+          else
+            pip install markdown matplotlib pillow requests
+          fi
+
+      - name: 점검 스크립트 생성
+        run: |
+          mkdir -p /tmp/st
+          cat > /tmp/st/selftest.py <<'SELFTEST_EOF'
+          # -*- coding: utf-8 -*-
+          """
+          변경분 자체 점검 — 상태 파일을 건드리지 않고, 외부 호출도 하지 않는다.
+
+          저장소 루트에서 실행한다.
+              python selftest.py
+
+          통과하면 마지막 줄에 '모두 통과'가 찍힌다.
+          """
+          import os
+          import sys
+
+          # 저장소 루트가 아닌 곳에서 실행되므로 작업 디렉터리를 import 경로에 넣는다
+          sys.path.insert(0, os.getcwd())
+          import csv
+          import json
+          import datetime
+          import importlib
+
+          OK, NG = "  [OK]", "  [NG]"
+          fails = []
+
+
+          def check(cond, msg):
+              print((OK if cond else NG) + " " + msg)
+              if not cond:
+                  fails.append(msg)
+              return cond
+
+
+          def section(t):
+              print("\n" + "=" * 58)
+              print(t)
+              print("=" * 58)
+
+
+          # ─────────────────────────────────────────────
+          section("1. 모듈 import")
+          # ─────────────────────────────────────────────
+          def show_source(fname, lineno, before=14, after=8, modname=None):
+              """문법 오류 지점 주변을 줄번호와 함께 찍는다."""
+              if (not fname or not os.path.exists(fname)) and modname:
+                  # 예외가 경로를 안 담고 있는 경우가 있어 모듈 위치로 되짚는다
+                  for base in sys.path:
+                      cand = os.path.join(base, modname + ".py")
+                      if os.path.exists(cand):
+                          fname = cand
+                          break
+              if not fname or not os.path.exists(fname):
+                  print("      (소스 파일을 찾지 못했습니다: {})".format(fname))
+                  return
+              if not lineno:
+                  print("      (오류 줄번호를 알 수 없습니다)")
+                  return
+              with open(fname, encoding="utf-8") as f:
+                  lines = f.read().split("\n")
+              lo = max(0, lineno - before - 1)
+              hi = min(len(lines), lineno + after)
+              print("\n      ── {} {}~{}행 ──".format(os.path.basename(fname), lo + 1, hi))
+              for i in range(lo, hi):
+                  mark = " >>" if (i + 1) == lineno else "   "
+                  body = lines[i]
+                  indent = len(body) - len(body.lstrip(" ")) if body.strip() else 0
+                  print("     {}{:>5} |{:>3}| {}".format(mark, i + 1, indent, body))
+              print("      (가운데 칸은 그 줄의 들여쓰기 칸 수입니다)\n")
+
+
+          for name in ["content_rules", "collect_sources", "generate_plan", "generate_draft"]:
+              try:
+                  importlib.import_module(name)
+                  check(True, name)
+              except SyntaxError as e:
+                  check(False, "{} — {}: {} ({}행)".format(name, type(e).__name__, e.msg, e.lineno))
+                  show_source(e.filename, e.lineno, modname=name)
+              except Exception as e:
+                  check(False, "{} — {}: {}".format(name, type(e).__name__, e))
+
+          if fails:
+              print("\nimport 단계에서 막혔습니다. 위 오류를 먼저 고치세요.")
+              sys.exit(1)
+
+          import content_rules as cr
+          import collect_sources as cs
+          import generate_plan as gp
+          import generate_draft as gd
+
+
+          # ─────────────────────────────────────────────
+          section("2. local_agenda.csv 스키마")
+          # ─────────────────────────────────────────────
+          NEED = ["id", "상태", "현안명", "분류", "단계", "최근진전일", "진전내용",
+                  "중요도", "출처", "키워드", "메모", "확인필요", "추가일", "마지막발행일"]
+
+          path = os.path.join("data", "local_agenda.csv")
+          if check(os.path.exists(path), "파일 존재: " + path):
+              with open(path, encoding="utf-8-sig", newline="") as f:
+                  rd = csv.DictReader(f)
+                  cols = rd.fieldnames or []
+                  rows = list(rd)
+              missing = [c for c in NEED if c not in cols]
+              check(not missing, "필수 열 14개 — 누락: {}".format(missing or "없음"))
+              check(len(rows) > 0, "데이터 행 {}건".format(len(rows)))
+
+              bad_len = [r.get("id") for r in rows if len(r) != len(cols) or None in r.values()]
+              check(not bad_len, "열 수 불일치 행 — {}".format(bad_len or "없음"))
+
+              ids = [r.get("id", "") for r in rows]
+              check(all(ids), "모든 행에 id 있음")
+              check(len(ids) == len(set(ids)), "id 중복 없음")
+
+              bad_state = [r["id"] for r in rows if (r.get("상태") or "").strip() not in ("활성", "보류")]
+              check(not bad_state, "상태 값이 활성/보류 — 이상: {}".format(bad_state or "없음"))
+
+              bad_date = []
+              for r in rows:
+                  for col in ("최근진전일", "추가일"):
+                      v = (r.get(col) or "").strip()
+                      if v:
+                          try:
+                              datetime.date.fromisoformat(v)
+                          except ValueError:
+                              bad_date.append("{}.{}={}".format(r["id"], col, v))
+              check(not bad_date, "날짜 형식 — 이상: {}".format(bad_date or "없음"))
+
+              for r in rows:
+                  print("      {} {:<12} 상태={} 키워드={}".format(
+                      r["id"], (r.get("현안명") or "")[:12], r.get("상태"), (r.get("키워드") or "")[:40]))
+
+
+          # ─────────────────────────────────────────────
+          section("2-2. hscity_notices.csv 진단")
+          # ─────────────────────────────────────────────
+          npath = os.path.join("data", "hscity_notices.csv")
+          if not os.path.exists(npath):
+              check(False, "파일 존재: " + npath)
+          else:
+              with open(npath, encoding="utf-8-sig", newline="") as f:
+                  nrows = list(csv.DictReader(f))
+              check(len(nrows) > 0, "고시 누적 {}건".format(len(nrows)))
+
+              dates = sorted((r.get("공고일자") or "").strip() for r in nrows
+                             if (r.get("공고일자") or "").strip())
+              if dates:
+                  print("      공고일 범위: {} ~ {}".format(dates[0], dates[-1]))
+                  old_cnt = sum(1 for d in dates if d < "2025-09-17")
+                  print("      1년 이전 건수: {} (NOTICE_DAYS=365 면 전부 잘림)".format(old_cnt))
+
+              tagged = sum(1 for r in nrows if (r.get("현안") or "").strip())
+              print("      현안 태그가 붙은 행: {}건".format(tagged))
+
+              # 현안별로 실제 몇 건이 걸리는지 — load_notices 를 그대로 쓴다
+              print("\n      [현안별 고시 연표]")
+              total = 0
+              with open(os.path.join("data", "local_agenda.csv"),
+                        encoding="utf-8-sig", newline="") as f:
+                  for r in csv.DictReader(f):
+                      hits = cs.load_notices(r)
+                      total += len(hits)
+                      mark = "○" if hits else "×"
+                      print("      {} {} {:<16} {}건".format(
+                          mark, r.get("id", ""), (r.get("현안명") or "")[:16], len(hits)))
+                      for h in hits[:3]:
+                          print("            {} {}".format(h["date"], h["title"][:46]))
+                      if len(hits) > 3:
+                          print("            … 외 {}건".format(len(hits) - 3))
+              check(total > 0, "현안에 걸린 고시 총 {}건".format(total))
+              print("      (0건이면 backfill 미반영이거나 키워드가 고시 제목과 안 맞는 것입니다)")
+
+              # ── 키워드 후보 찾기 ──────────────────────────
+              # 누적 고시에서 현안과 닿을 법한 제목을 역으로 뽑는다.
+              # 현안명을 쪼갠 낱말이나 관련어가 들어간 제목을 보여주면
+              # 어떤 키워드를 넣어야 걸리는지 사람이 바로 판단할 수 있다.
+              PROBE = {
+                  "트램": ["트램", "도시철도", "노면전차"],
+                  "고려대병원 건립": ["의료", "병원", "대학", "종합의료"],
+                  "유통3부지 용도전환": ["유통", "장지동", "업무설비"],
+                  "GTX-A": ["GTX", "광역급행", "환승", "동탄역"],
+                  "용인 반도체 국가산단": ["반도체", "국가산단", "첨단"],
+                  "용인반도체 연결도로": ["84호선", "국지도", "도로구역", "중동", "서리"],
+              }
+              print("\n      [키워드 후보 — 누적 고시에서 역으로 찾기]")
+              for issue, probes in PROBE.items():
+                  found = []
+                  for r in nrows:
+                      t = (r.get("제목") or "").strip()
+                      if any(p in t for p in probes):
+                          found.append((r.get("공고일자", ""), r.get("부서", ""), t))
+                  found.sort()
+                  print("\n      ■ {} — 후보 {}건".format(issue, len(found)))
+                  for d, dept, t in found[-6:]:
+                      print("         {} [{}] {}".format(d, dept, t[:58]))
+                  if not found:
+                      print("         (관련 고시가 누적에 없습니다)")
+
+              # 어느 부서 고시가 많이 쌓였는지 — 백필 범위 점검용
+              from collections import Counter
+              cnt = Counter((r.get("부서") or "").strip() for r in nrows)
+              print("\n      [부서별 누적 건수 상위 12]")
+              for dept, c in cnt.most_common(12):
+                  print("         {:<20} {}건".format(dept or "(없음)", c))
+
+
+          # ─────────────────────────────────────────────
+          section("3. 트랙 배정 (앞으로 10개 목요일)")
+          # ─────────────────────────────────────────────
+          d = cs.today_kst()
+          seen = {}
+          n = 0
+          while n < 10:
+              d += datetime.timedelta(days=1)
+              if d.weekday() != 3:
+                  continue
+              n += 1
+              track, _, name, _, _ = cs.pick_track(d)
+              seen[track] = seen.get(track, 0) + 1
+              print("      {} {}".format(d, name))
+
+          check("council" in seen, "회의록 특집이 배정됨 ({}회)".format(seen.get("council", 0)))
+          check("local" in seen, "지역 현안이 배정됨 ({}회)".format(seen.get("local", 0)))
+
+          print("\n   월요일 순환은 상태 파일을 증가시키므로 여기서는 건너뜁니다.")
+
+
+          # ─────────────────────────────────────────────
+          section("4. 아젠다 순환 (상태 미변경)")
+          # ─────────────────────────────────────────────
+          # 상태 쓰기와 뉴스 조회를 막아 둔다
+          cs.write_last_agenda_id = lambda *a, **k: None
+          cs.mark_published = lambda *a, **k: None
+          cs.google_news_items = lambda *a, **k: []
+
+          last = cs.read_last_agenda_id()
+          print("      현재 포인터: {}".format(last or "(없음 — 처음부터)"))
+
+          active = cs.load_agenda()
+          check(len(active) > 0, "활성 안건 {}건: {}".format(len(active), [r["id"] for r in active]))
+
+          agenda, log, why = cs.pick_agenda()
+          check(agenda is not None, "안건 선정됨")
+          if agenda:
+              print("      판정 로그:")
+              for l in log:
+                  print("        " + l)
+              print("      → 선정: {} {} ({})".format(agenda["id"], agenda["현안명"], why))
+              check(agenda["id"] in [r["id"] for r in active], "선정 안건이 활성 목록 안에 있음")
+
+          after = cs.read_last_agenda_id()
+          check(after == last, "포인터 변경 없음 (테스트 후에도 {})".format(after or "없음"))
+
+
+          # ─────────────────────────────────────────────
+          section("5. 기획 프롬프트 — 아젠다 주입")
+          # ─────────────────────────────────────────────
+          fake_local = {
+              "track": "local",
+              "category": "지역이슈",
+              "category_display": "동탄 지역 개발 이슈",
+              "top_keyword": agenda["현안명"] if agenda else "트램",
+              "rows": [{"keyword": "트램", "blog": 10, "cafe": 5, "trend": 50.0, "score": 1.0}],
+              "agenda": {
+                  "id": agenda["id"] if agenda else "A001",
+                  "현안명": agenda["현안명"] if agenda else "트램",
+                  "분류": agenda.get("분류", "") if agenda else "교통",
+                  "단계": agenda.get("단계", "") if agenda else "착공준비",
+                  "최근진전일": agenda.get("최근진전일", "") if agenda else "2026-09-08",
+                  "진전내용": agenda.get("진전내용", "") if agenda else "",
+                  "중요도": "상",
+                  "키워드": agenda.get("키워드", "") if agenda else "트램",
+                  "메모": agenda.get("메모", "") if agenda else "",
+                  "확인필요": agenda.get("확인필요", "") if agenda else "",
+                  "선정사유": why if agenda else "",
+                  "최근뉴스": [],
+              },
+          }
+
+          if check(hasattr(gp, "build_agenda_block"), "build_agenda_block 함수 있음"):
+              blk = gp.build_agenda_block(fake_local)
+              check(fake_local["agenda"]["현안명"] in blk, "현안명이 블록에 들어감")
+
+              p = gp.build_plan_prompt(fake_local)
+              check(fake_local["agenda"]["현안명"] in p, "기획 프롬프트에 현안 포함")
+              check("다른 사안으로 넘어가지 마세요" in p, "소재 고정 지시 포함")
+              check("변화 연표" in p, "local 산출물 유형이 붙음")
+              check("체크리스트 형태를 쓰지 말 것" in p, "local 금지 지침(체크리스트 금지) 포함")
+
+          check(hasattr(gp, "today_kst"), "generate_plan 에 today_kst 있음")
+
+
+          # ─────────────────────────────────────────────
+          section("6. 초안 프롬프트 — 정보 트랙 격리")
+          # ─────────────────────────────────────────────
+          today = cs.today_kst().isoformat()
+          plan_local = {
+              "reader": "동탄에서 사업장을 찾고 있는 사업주",
+              "output_type": "① 변화 연표",
+              "conclusion": "무엇이 어떻게 달라졌다",
+              "criteria": ["사실1", "사실2", "사실3"],
+              "calc_tab": "없음",
+          }
+
+          p_local = gd.build_prompt(fake_local, [], today, plan=plan_local, category="local")
+          check("국토교통부 실거래가 공개시스템(직접 집계)" not in p_local,
+                "local 프롬프트에 실거래 블록 없음")
+          check("지금까지의 흐름" in p_local, "local 구조(연표) 적용됨")
+          check("이 글은 소식을 전하는 글입니다" in p_local, "정보 트랙 핵심 원칙 적용됨")
+
+          fake_council = dict(fake_local)
+          fake_council.update({"track": "council", "category": "시의회특집",
+                               "category_display": "시의회 회의록 특집",
+                               "top_keyword": "화성시의회"})
+          fake_council.pop("agenda", None)
+
+          p_council = gd.build_prompt(fake_council, [], today, plan=plan_local, category="council")
+          check("국토교통부 실거래가 공개시스템(직접 집계)" not in p_council,
+                "council 프롬프트에 실거래 블록 없음")
+          check("이번 회기에 다뤄진 것" in p_council, "council 전용 구조 적용됨")
+          check("#화성시의회" in p_council, "council 해시태그 적용됨")
+
+          p_jisik = gd.build_prompt(
+              {"track": "jisik", "category_display": "세금·정책", "top_keyword": "지식산업센터 취득세 감면",
+               "rows": fake_local["rows"]},
+              [], today,
+              plan={"reader": "실사용 매수자", "output_type": "② 합격/불합격 기준",
+                    "conclusion": "", "criteria": [], "calc_tab": "없음"},
+              category="jisik")
+          check("판단 도구입니다" in p_jisik, "지산 트랙은 판단 도구 원칙 유지")
+
+          check(hasattr(gd, "today_kst"), "generate_draft 에 today_kst 있음")
+
+
+          # ─────────────────────────────────────────────
+          section("6-2. 근거 링크가 프롬프트에 실리는가")
+          # ─────────────────────────────────────────────
+          # 회의록 링크를 안 넘기면 모델은 근거를 달 방법이 없다.
+          # 지어내는 것은 금지되어 있으므로 결과는 링크 없는 글이 된다.
+
+          fake_rows = [{
+              "회의일": "2026-09-03", "회의명": "도시건설위원회",
+              "요약": "트램 6차 유찰, 720억 증액",
+              "링크": "https://council.hscity.go.kr/cnts/mnt/mntsViewer.php?schSn=7717",
+          }]
+
+          blk = cr.build_council_section(fake_rows)
+          check("mntsViewer.php?schSn=7717" in blk,
+                "build_council_section 이 회의록 링크를 넘김")
+          check("인용부호(>)" in blk or "근거" in blk,
+                "회의록 섹션 규칙에 근거 표기 지시 있음")
+
+          # 실제 CSV 로 만든 블록에도 링크가 들어가는지
+          real_rows = gd.load_council_rows()
+          if real_rows:
+              real_blk = cr.build_council_section(real_rows)
+              check("council.hscity.go.kr" in real_blk,
+                    "실제 회의록 {}건에 링크 포함".format(len(real_rows)))
+          else:
+              print("      (회의록 데이터가 없어 실제 검사는 건너뜁니다)")
+
+          # 구조에 링크 지시가 있는가 — local 과 council 양쪽
+          st_local = cr.build_info_structure("local", "참고링크 규칙", blk)
+          st_council = cr.build_info_structure("council", "참고링크 규칙", blk)
+
+          check("인용부호(>)" in st_local, "local 구조에 근거 링크 지시 있음")
+          check("council.hscity.go.kr" in st_council, "council 구조에 회의록 링크 지시 있음")
+
+          # 기획 단계도
+          p_plan = gp.format_council(fake_rows, "local")
+          check("mntsViewer.php?schSn=7717" in p_plan,
+                "generate_plan.format_council 이 링크를 넘김")
+
+          # 초안 프롬프트 전체에 링크가 실리는지 (end-to-end)
+          if "council.hscity.go.kr" in p_local:
+              check(True, "local 초안 프롬프트에 회의록 링크 실림")
+          else:
+              check(bool(real_rows) is False,
+                    "local 초안 프롬프트에 회의록 링크 실림 (회의록 없으면 면제)")
+
+          # 고시 연표 쪽
+          fake_notice = dict(fake_local)
+          fake_notice["agenda"] = dict(fake_local["agenda"])
+          fake_notice["agenda"]["관련고시"] = [{
+              "date": "2026-04-12", "title": "동탄도시철도 1단계 실시계획 인가 고시",
+              "dept": "트램건설추진단", "board": "고시",
+              "link": "https://www.hscity.go.kr/www/gosi/BD_selectNoticeDetail.do?q_notAncmtMgtNo=1",
+          }]
+          if check(hasattr(gd, "build_agenda_material"), "build_agenda_material 함수 있음"):
+              mat = gd.build_agenda_material(fake_notice)
+              check("BD_selectNoticeDetail" in mat, "고시 링크가 초안 재료에 들어감")
+              check("실시계획 인가" in mat, "고시 제목이 초안 재료에 들어감")
+
+              p2 = gd.build_prompt(fake_notice, [], today, plan=plan_local, category="local")
+              check("BD_selectNoticeDetail" in p2,
+                    "초안 프롬프트에 고시 링크 실림 ({agenda_material} 삽입 확인)")
+
+
+          # ─────────────────────────────────────────────
+          section("7. 도입 문구 (코드가 자동 삽입하는 문장)")
+          # ─────────────────────────────────────────────
+          md = "# 테스트 제목\n\n본문입니다.\n"
+
+          html_local = gd.render_naver_html(md, top_keyword=fake_local["top_keyword"],
+                                            rows=None, track="local",
+                                            agenda=fake_local["agenda"])
+          html_council = gd.render_naver_html(md, top_keyword="화성시의회", rows=None, track="council")
+          html_jisik = gd.render_naver_html(md, top_keyword="지식산업센터 취득세 감면",
+                                            rows=None, track="jisik")
+
+          r1 = check("지식산업센터 관련 검색 데이터" not in html_local,
+                     "local 글에 '검색 데이터 1위' 문구 없음")
+          r2 = check(fake_local["agenda"]["현안명"] in html_local, "local 도입에 현안명 들어감")
+          r3 = check("회의록" in html_council, "council 도입 문구 적용됨")
+          r4 = check("지식산업센터 관련 검색 데이터" not in html_council,
+                     "council 글에 '검색 데이터 1위' 문구 없음")
+          r5 = check("지식산업센터 관련 검색 데이터" in html_jisik, "지산 글은 기존 문구 유지")
+
+          if not (r2 and r3 and r5):
+              print("\n      ── 진단: 도입 문구가 삽입되지 않았습니다 ──")
+              print("\n      [실제 출력 — local]")
+              inner = html_local.split("<body")[-1]
+              print("      " + inner[:700].replace("\n", "\n      "))
+
+              import inspect
+              try:
+                  srclines, start = inspect.getsourcelines(gd.render_naver_html)
+              except Exception as e:
+                  print("      소스를 읽지 못했습니다: " + str(e))
+                  srclines, start = [], 0
+              hits = [i for i, l in enumerate(srclines)
+                      if ("intro" in l) or ("</h1>" in l) or ("top_keyword:" in l)
+                      or ("table_html" in l) or ("table_position" in l)]
+              if hits:
+                  lo, hi = max(0, hits[0] - 3), min(len(srclines), hits[-1] + 4)
+                  print("\n      [render_naver_html 소스 {}~{}행]".format(start + lo, start + hi - 1))
+                  for i in range(lo, hi):
+                      body = srclines[i].rstrip("\n")
+                      ind = len(body) - len(body.lstrip(" ")) if body.strip() else 0
+                      print("      {:>5} |{:>3}| {}".format(start + i, ind, body))
+              else:
+                  print("      intro 관련 줄을 찾지 못했습니다 — 블록이 통째로 사라졌을 수 있습니다.")
+              print("      (가운데 칸은 들여쓰기 칸 수입니다)\n")
+
+
+          # ─────────────────────────────────────────────
+          section("결과")
+          # ─────────────────────────────────────────────
+          if fails:
+              print("실패 {}건".format(len(fails)))
+              for f in fails:
+                  print("  - " + f)
+              sys.exit(1)
+          print("모두 통과")
+          SELFTEST_EOF
+          python -c "import ast; ast.parse(open('/tmp/st/selftest.py',encoding='utf-8').read()); print('스크립트 문법 OK')"
+
+      - name: 변경 전 상태 기록
+        working-directory: ${{ env.RUNDIR }}
+        run: |
+          mkdir -p state
+          echo "--- 아젠다 포인터 ---"
+          cat state/agenda_last_id.txt 2>/dev/null || echo "(없음)"
+          echo "--- 월요일 순환 인덱스 ---"
+          cat state/rotation_index.txt 2>/dev/null || echo "(없음)"
+          find state data -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/before.txt
+          cat /tmp/before.txt
+
+      - name: 자체 점검 실행
+        working-directory: ${{ env.RUNDIR }}
+        env:
+          PYTHONPATH: ${{ env.MODDIR }}
+        run: python /tmp/st/selftest.py
+
+      - name: 상태 파일이 바뀌지 않았는지 확인
+        if: always()
+        working-directory: ${{ env.RUNDIR }}
+        run: |
+          find state data -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/after.txt
+          if diff -u /tmp/before.txt /tmp/after.txt; then
+            echo "상태 파일 변경 없음 — 정상"
+          else
+            echo "::error::테스트가 상태 파일을 변경했습니다."
+            exit 1
+          fi
