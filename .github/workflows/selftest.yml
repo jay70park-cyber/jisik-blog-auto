@@ -252,36 +252,67 @@ jobs:
 
               # ── 키워드 후보 찾기 ──────────────────────────
               # 누적 고시에서 현안과 닿을 법한 제목을 역으로 뽑는다.
-              # 현안명을 쪼갠 낱말이나 관련어가 들어간 제목을 보여주면
-              # 어떤 키워드를 넣어야 걸리는지 사람이 바로 판단할 수 있다.
+              # 탐색어를 넓게 잡아야 실제 고시가 쓰는 표현을 발견할 수 있다.
               PROBE = {
-                  "트램": ["트램", "도시철도", "노면전차"],
-                  "고려대병원 건립": ["의료", "병원", "대학", "종합의료"],
-                  "유통3부지 용도전환": ["유통", "장지동", "업무설비"],
-                  "GTX-A": ["GTX", "광역급행", "환승", "동탄역"],
-                  "용인 반도체 국가산단": ["반도체", "국가산단", "첨단"],
-                  "용인반도체 연결도로": ["84호선", "국지도", "도로구역", "중동", "서리"],
+                  "트램": ["트램", "도시철도", "노면전차", "동탄역"],
+                  "고려대병원 건립": ["의료", "병원", "대학", "종합의료", "의과",
+                                 "학교시설", "의료시설"],
+                  "유통3부지 용도전환": ["유통", "장지동", "업무설비", "물류",
+                                  "창고", "유통상업"],
+                  "GTX-A": ["GTX", "광역급행", "환승", "동탄역", "광역철도",
+                            "복합환승"],
+                  "용인 반도체 국가산단": ["반도체", "국가산단", "첨단", "클러스터",
+                                   "산업단지"],
+                  "용인반도체 연결도로": ["84호선", "국지도", "도로구역", "중동",
+                                  "서리", "이동읍", "지방도"],
               }
               print("\n      [키워드 후보 — 누적 고시에서 역으로 찾기]")
               for issue, probes in PROBE.items():
                   found = []
                   for r in nrows:
                       t = (r.get("제목") or "").strip()
-                      if any(p in t for p in probes):
-                          found.append((r.get("공고일자", ""), r.get("부서", ""), t))
+                      hit = [p for p in probes if p in t]
+                      if hit:
+                          found.append((r.get("공고일자", ""), r.get("부서", ""), t, hit))
                   found.sort()
                   print("\n      ■ {} — 후보 {}건".format(issue, len(found)))
-                  for d, dept, t in found[-6:]:
-                      print("         {} [{}] {}".format(d, dept, t[:58]))
+                  # 어떤 탐색어가 몇 번 걸렸는지
+                  from collections import Counter
+                  c = Counter(p for _, _, _, hs in found for p in hs)
+                  if c:
+                      print("         걸린 말: " + ", ".join(
+                          "{}({})".format(k, v) for k, v in c.most_common()))
+                  for d, dept, t, hs in found[-8:]:
+                      print("         {} [{}] {}".format(d, dept, t[:60]))
                   if not found:
                       print("         (관련 고시가 누적에 없습니다)")
 
-              # 어느 부서 고시가 많이 쌓였는지 — 백필 범위 점검용
+              # 동탄권 고시 중 현안에 안 걸린 것 — 새 현안 후보가 여기 있다
+              print("\n      [동탄권인데 현안 미적중 — 새 현안 후보]")
+              orphan = [r for r in nrows
+                        if (r.get("동탄관련") or "").strip() == "O"
+                        and not (r.get("현안") or "").strip()]
+              orphan.sort(key=lambda r: r.get("공고일자", ""), reverse=True)
+              print("      총 {}건 중 최근 15건".format(len(orphan)))
+              for r in orphan[:15]:
+                  print("         {} [{}] {}".format(
+                      r.get("공고일자", ""), r.get("부서", ""), (r.get("제목") or "")[:60]))
+
+              # 어느 부서 고시가 많이 쌓였는지 — WATCH_DEPTS 점검용
               from collections import Counter
               cnt = Counter((r.get("부서") or "").strip() for r in nrows)
-              print("\n      [부서별 누적 건수 상위 12]")
-              for dept, c in cnt.most_common(12):
-                  print("         {:<20} {}건".format(dept or "(없음)", c))
+              print("\n      [부서별 누적 건수 상위 20]")
+              for dept, c in cnt.most_common(20):
+                  print("         {:<22} {}건".format(dept or "(없음)", c))
+
+              try:
+                  import collect_hscity as ch
+                  missing = sorted(d for d in ch.WATCH_DEPTS if cnt.get(d, 0) == 0)
+                  print("\n      WATCH_DEPTS 중 누적에 한 건도 없는 이름:")
+                  print("         " + (", ".join(missing) if missing else "없음"))
+                  print("         (이름이 실제와 다르면 그 부서 고시는 제목 키워드로만 걸립니다)")
+              except Exception as e:
+                  print("      (collect_hscity 로드 실패: {})".format(e))
 
 
           # ─────────────────────────────────────────────
