@@ -1,0 +1,155 @@
+name: 지도 API 확인 (probe-map)
+
+# 수동 실행 전용. NCP 키로 정적지도·지오코딩이 되는지만 확인한다.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 스크립트 생성
+        run: |
+          mkdir -p /tmp/pm
+          cat > /tmp/pm/probe_map.py <<'PROBEMAP_EOF'
+          # -*- coding: utf-8 -*-
+          """
+          지도 API 사용 가능 여부 확인
+
+          지금 쓰는 NCP 키(NAVER_CLIENT_ID/SECRET)로 아래가 되는지 본다.
+            1) 정적지도(Static Map) — 지도 이미지를 PNG 로 받는다
+            2) 지오코딩(Geocoding)   — 주소를 좌표로 바꾼다
+
+          둘 다 안 되면 matplotlib 모식도로 간다.
+          읽기만 하고 아무것도 저장하지 않는다.
+          """
+          import os
+          import json
+          import urllib.parse
+          import urllib.request
+
+          NCP_ID = os.environ.get("NAVER_CLIENT_ID", "")
+          NCP_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
+
+          # 동탄역 좌표
+          LAT, LNG = 37.2011, 127.0980
+
+          HEADER_SETS = [
+              ("NCP APIGW (지금 쓰는 방식)", {
+                  "X-NCP-APIGW-API-KEY-ID": NCP_ID,
+                  "X-NCP-APIGW-API-KEY": NCP_SECRET,
+              }),
+              ("NCP Maps 전용 헤더", {
+                  "X-NCP-APIGW-API-KEY-ID": NCP_ID,
+                  "X-NCP-APIGW-API-KEY": NCP_SECRET,
+                  "Accept": "*/*",
+              }),
+              ("신형 ncpKeyId 헤더", {
+                  "x-ncp-apigw-api-key-id": NCP_ID,
+                  "x-ncp-apigw-api-key": NCP_SECRET,
+              }),
+          ]
+
+          STATIC_URLS = [
+              "https://naveropenapi.apigw.ntruss.com/map-static/v2/raster",
+              "https://maps.apigw.ntruss.com/map-static/v2/raster",
+              "https://naverapihub.apigw.ntruss.com/map-static/v2/raster",
+          ]
+
+          GEOCODE_URLS = [
+              "https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode",
+              "https://maps.apigw.ntruss.com/map-geocode/v2/geocode",
+              "https://naverapihub.apigw.ntruss.com/map-geocode/v2/geocode",
+          ]
+
+
+          def probe(url, params, headers, expect="image", timeout=20):
+              full = url + "?" + urllib.parse.urlencode(params)
+              req = urllib.request.Request(full, headers=dict(headers))
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as res:
+                      data = res.read()
+                      ctype = res.headers.get("Content-Type", "")
+                  if expect == "image":
+                      ok = data[:8].startswith(b"\x89PNG") or data[:2] == b"\xff\xd8"
+                      return ok, "{} / {}바이트 / {}".format(
+                          res.status, len(data), ctype)
+                  else:
+                      j = json.loads(data.decode("utf-8"))
+                      n = len(j.get("addresses", []))
+                      first = j["addresses"][0] if n else {}
+                      return n > 0, "{}건 / {} {}".format(
+                          n, first.get("x", ""), first.get("y", ""))
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode("utf-8", errors="replace")[:150]
+                  return False, "HTTP {} — {}".format(e.code, body)
+              except Exception as e:
+                  return False, "{}: {}".format(type(e).__name__, e)
+
+
+          def main():
+              print("키 설정: ID {}자, SECRET {}자\n".format(len(NCP_ID), len(NCP_SECRET)))
+
+              print("=" * 62)
+              print("1. 정적지도 (Static Map)")
+              print("=" * 62)
+              params = {
+                  "w": 700, "h": 400, "center": "{},{}".format(LNG, LAT),
+                  "level": 13, "format": "png",
+                  "markers": "type:d|size:mid|pos:{} {}|label:A".format(LNG, LAT),
+              }
+              hit_static = []
+              for url in STATIC_URLS:
+                  for name, hd in HEADER_SETS:
+                      ok, msg = probe(url, params, hd, "image")
+                      mark = "★" if ok else " "
+                      print("  {} {:<52} {}".format(
+                          mark, url.split("//")[1][:34] + " | " + name[:16], msg[:70]))
+                      if ok:
+                          hit_static.append((url, name, hd))
+
+              print("\n" + "=" * 62)
+              print("2. 지오코딩 (Geocoding)")
+              print("=" * 62)
+              hit_geo = []
+              for url in GEOCODE_URLS:
+                  for name, hd in HEADER_SETS:
+                      ok, msg = probe(url, {"query": "경기도 화성시 동탄대로 14길 6"},
+                                      hd, "json")
+                      mark = "★" if ok else " "
+                      print("  {} {:<52} {}".format(
+                          mark, url.split("//")[1][:34] + " | " + name[:16], msg[:70]))
+                      if ok:
+                          hit_geo.append((url, name))
+
+              print("\n" + "=" * 62)
+              print("결과")
+              print("=" * 62)
+              print("  정적지도: {}".format(
+                  "사용 가능 — " + hit_static[0][0] if hit_static else "불가"))
+              print("  지오코딩: {}".format(
+                  "사용 가능 — " + hit_geo[0][0] if hit_geo else "불가"))
+              if not hit_static:
+                  print("\n  정적지도가 안 되면 matplotlib 모식도로 갑니다.")
+                  print("  NCP 콘솔에서 Maps 상품을 신청하면 같은 키로 쓸 수 있습니다.")
+
+
+          if __name__ == "__main__":
+              import urllib.error
+              main()
+          PROBEMAP_EOF
+          python -c "import ast; ast.parse(open('/tmp/pm/probe_map.py',encoding='utf-8').read()); print('문법 OK')"
+
+      - name: 지도 API 확인
+        run: python /tmp/pm/probe_map.py
