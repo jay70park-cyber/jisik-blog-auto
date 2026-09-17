@@ -23,6 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import make_thumbnail as thumb
+import make_map
 from content_rules import (build_rules, build_council_section,
                            build_info_structure, INFO_CORE_PRINCIPLE,
                            INFO_TRACKS)
@@ -247,6 +248,11 @@ def build_agenda_material(result):
             "  다만 고시 제목에 없는 내용을 지어내지 마세요.",
             "  배경 설명이 필요하면 웹 검색으로 확인하고 출처를 밝히세요.",
         ]
+    if a.get("위도") and a.get("경도"):
+        lines.append("")
+        lines.append("  이 글에는 현안 위치를 표시한 개념도가 자동으로 삽입됩니다.")
+        lines.append("  위치를 글로 길게 설명하지 마세요. 어느 권역인지 한 줄이면 충분합니다.")
+        lines.append("  개념도는 실제 축척이 아니므로 거리나 소요시간을 단정하지 마세요.")
     lines.append("")
     return "\n".join(lines)
     
@@ -858,6 +864,29 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
             )
         intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
         body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
+
+    # 지역 현안 글에는 위치 개념도를 붙인다.
+    # 독자가 가장 먼저 궁금해하는 것이 "그게 어디냐" 이기 때문이다.
+    # 좌표가 없으면 아무것도 붙지 않는다.
+    if track == "local" and agenda:
+        try:
+            map_html = make_map.build_map_figure(agenda)
+        except Exception as e:
+            print("지도 생성 실패(본문에는 영향 없음): " + repr(e))
+            map_html = ""
+        if map_html:
+            # '지금까지의 흐름' 소제목 앞에 둔다. 흐름을 읽기 전에
+            # 위치를 먼저 보여주는 편이 이해가 빠르다.
+            anchor = "지금까지의 흐름"
+            idx = body_html.find(anchor)
+            if idx > 0:
+                cut = body_html.rfind("<div", 0, idx)
+                if cut > 0:
+                    body_html = body_html[:cut] + map_html + body_html[cut:]
+                else:
+                    body_html += map_html
+            else:
+                body_html += map_html
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
