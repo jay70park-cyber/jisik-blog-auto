@@ -22,17 +22,15 @@ jobs:
           cat > /tmp/pb/probe.py <<'PROBE_EOF'
           # -*- coding: utf-8 -*-
           """
-          화성시 고시 게시판의 페이지 넘김 파라미터를 찾는다.
+          3차 탐색 — 페이징은 풀렸다. 남은 것 둘을 확인한다.
 
-          collect_hscity.py 주석에 이렇게 적혀 있다.
-              "페이지 필드 이름은 아직 못 찾았으므로, q_currPage 를 같이 보내보고
-               1페이지와 결과가 같으면 페이지 넘김이 안 되는 것으로 보고 멈춘다"
+            1) 부서 필터(q_depNm)가 실제로 먹는가
+            2) 검색(query)이 먹는가 — 먹으면 현안별로 직접 긁을 수 있다
 
-          그래서 부서당 10건씩만 쌓였고, 284건으로는 현안 연표가 안 만들어진다.
-
-          사람이 개발자도구로 찾는 대신, 후보 이름을 하나씩 보내보고
-          1페이지와 고시번호 목록이 달라지는 것을 찾는다.
-          게시판 프레임워크가 쓰는 이름은 몇 개로 정해져 있다.
+          풀린 것
+            q_cp 와 q_currPage 를 함께 보내야 페이지가 넘어간다.
+            q_cp 는 값과 무관하게 '있기만' 하면 된다.
+            마지막 페이지는 688 — 전체 약 6,880건.
 
           읽기만 한다. 아무것도 저장하지 않는다.
           """
@@ -43,16 +41,11 @@ jobs:
           import urllib.request
 
           BOARD = "https://www.hscity.go.kr/www/gosi/BD_notice.do"
-
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 
-          # 국내 지자체 게시판이 흔히 쓰는 이름들
-          # 1차 탐색에서 hidden 필드로 확인된 것들.
-          # q_currPage 는 폼에 있는데도 단독으로는 안 먹었다.
-          # 서버가 폼 전체를 받아야 판단하는 구조로 보인다.
-          FORM_BASE = {
-              "q_cp": "",
+          FORM = {
+              "q_cp": "1",
               "q_notAncmtSeCode": "01",
               "q_notAncmtMgtNo": "",
               "q_currPage": "1",
@@ -62,14 +55,10 @@ jobs:
               "collection": "",
           }
 
-          PAGE_KEYS = ["q_cp", "q_currPage", "q_pageIndex", "q_pageNo", "page"]
 
-          # 페이지 대신 '한 번에 많이' 가 되는 경우도 있다
-          SIZE_KEYS = ["q_rowPerPage", "q_listScale", "pageSize", "q_pageSize",
-                       "rowPerPage", "listScale", "recordCountPerPage"]
-
-
-          def post(params, timeout=30):
+          def post(overrides, timeout=30):
+              params = dict(FORM)
+              params.update(overrides)
               body = urllib.parse.urlencode(params).encode("utf-8")
               req = urllib.request.Request(BOARD, data=body, headers={
                   "User-Agent": UA,
@@ -86,212 +75,101 @@ jobs:
                   return ""
 
 
-          def get(params=None, timeout=30):
-              url = BOARD + ("?" + urllib.parse.urlencode(params) if params else "")
-              req = urllib.request.Request(url, headers={
-                  "User-Agent": UA,
-                  "Accept": "text/html,application/xhtml+xml",
-                  "Accept-Language": "ko-KR,ko;q=0.9",
-              })
-              try:
-                  with urllib.request.urlopen(req, timeout=timeout) as res:
-                      return res.read().decode("utf-8", errors="replace")
-              except Exception as e:
-                  print("    요청 실패: " + str(e))
-                  return ""
-
-
           def strip_tags(s):
               s = re.sub(r"<[^>]+>", " ", s or "")
               return re.sub(r"\s+", " ", html.unescape(s)).strip()
 
 
-          def numbers(page_html):
-              """목록에 뜬 고시번호들. 페이지가 넘어갔는지 판별하는 지문."""
+          def rows_of(page_html):
               out = []
               for m in re.finditer(r"<tr[^>]*>(.*?)</tr>", page_html, re.S | re.I):
                   block = m.group(1)
                   if re.search(r"<th[^>]*>", block, re.I):
                       continue
-                  tds = re.findall(r"<td[^>]*>(.*?)</td>", block, re.S | re.I)
+                  tds = [strip_tags(t) for t in
+                         re.findall(r"<td[^>]*>(.*?)</td>", block, re.S | re.I)]
                   if len(tds) >= 4:
-                      out.append(strip_tags(tds[0]))
-              return [x for x in out if x]
+                      out.append({"번호": tds[0], "제목": tds[1],
+                                  "부서": tds[2], "일자": tds[3]})
+              return out
 
 
-          def first_title(page_html):
-              for m in re.finditer(r"<tr[^>]*>(.*?)</tr>", page_html, re.S | re.I):
-                  tds = re.findall(r"<td[^>]*>(.*?)</td>", m.group(1), re.S | re.I)
-                  if len(tds) >= 4:
-                      return strip_tags(tds[1])[:50]
-              return ""
-
-
-          def show_form(page_html):
-              """페이지의 form 안 hidden 필드를 보여준다. 정답이 여기 있을 때가 많다."""
-              print("\n" + "=" * 58)
-              print("페이지 안 hidden 입력 필드")
-              print("=" * 58)
-              names = re.findall(
-                  r'<input[^>]*type=["\']hidden["\'][^>]*>', page_html, re.I)
-              seen = set()
-              for tag in names:
-                  n = re.search(r'name=["\']([^"\']+)["\']', tag, re.I)
-                  v = re.search(r'value=["\']([^"\']*)["\']', tag, re.I)
-                  if n and n.group(1) not in seen:
-                      seen.add(n.group(1))
-                      print("  {:<24} = {}".format(n.group(1), (v.group(1) if v else "")[:40]))
-              if not seen:
-                  print("  (hidden 필드 없음)")
-
-              print("\n" + "=" * 58)
-              print("페이지 이동 스크립트 (숫자 링크가 부르는 함수)")
-              print("=" * 58)
-              # 2페이지 링크가 부르는 자바스크립트를 찾는다
-              for m in re.finditer(r"""(?:href|onclick)=["']([^"']*(?:age|Page)[^"']*)["']""",
-                                   page_html):
-                  s = m.group(1)
-                  if "javascript" in s.lower() or "(" in s:
-                      print("  " + s[:110])
-              # 함수 정의도 함께
-              for m in re.finditer(r"function\s+(\w*[Pp]age\w*)\s*\(([^)]*)\)", page_html):
-                  print("  function {}({})".format(m.group(1), m.group(2)))
-
-
-          def try_form(label, overrides, base):
-              """폼 전체를 보내고 결과가 1페이지와 달라졌는지 본다."""
-              params = dict(FORM_BASE)
-              params.update(overrides)
-              got = post(params)
-              nums = numbers(got)
-              if not nums:
-                  print("  {:<38} 목록 없음".format(label))
-                  return None
-              if nums == base:
-                  print("  {:<38} 동일".format(label))
-                  return None
-              print("  {:<38} ★ 달라짐 {}건 | {}".format(
-                  label, len(nums), first_title(got)))
-              return nums
+          def last_page(page_html):
+              hits = [int(m.group(1)) for m in
+                      re.finditer(r"opSearch\((\d+)\)", page_html)]
+              return max(hits) if hits else 0
 
 
           def main():
               print("=" * 62)
-              print("1페이지 기준 — 폼 전체를 그대로 보낸 결과")
+              print("0. 페이징 재확인")
               print("=" * 62)
-              base_html = post(FORM_BASE)
-              base = numbers(base_html)
-              if not base:
-                  print("  폼 POST 로는 목록을 못 읽었습니다. GET 으로 기준을 잡습니다.")
-                  base_html = get()
-                  base = numbers(base_html)
-              if not base:
-                  print("목록을 못 읽었습니다.")
-                  print(base_html[:800])
-                  return
-              print("  고시번호 {}개".format(len(base)))
-              print("  첫 행: {}".format(first_title(base_html)))
-
-              hits = []
+              p1 = post({"q_currPage": "1"})
+              p2 = post({"q_currPage": "2"})
+              p50 = post({"q_currPage": "50"})
+              r1, r2, r50 = rows_of(p1), rows_of(p2), rows_of(p50)
+              print("  1p  {}건  첫 행: {}".format(len(r1), r1[0]["제목"][:42] if r1 else "-"))
+              print("  2p  {}건  첫 행: {}".format(len(r2), r2[0]["제목"][:42] if r2 else "-"))
+              print("  50p {}건  첫 행: {}".format(len(r50), r50[0]["제목"][:42] if r50 else "-"))
+              print("  1p≠2p: {} / 2p≠50p: {}".format(r1 != r2, r2 != r50))
+              print("  마지막 페이지: {}".format(last_page(p1)))
+              if r50:
+                  print("  50p 공고일자: {} ~ {}".format(r50[-1]["일자"], r50[0]["일자"]))
 
               print("\n" + "=" * 62)
-              print("A. 폼 전체 + 페이지 값 하나만 2로")
+              print("1. 부서 필터 q_depNm 이 먹는가")
               print("=" * 62)
-              for key in PAGE_KEYS:
-                  r = try_form("{} = 2".format(key), {key: "2"}, base)
-                  if r:
-                      hits.append(("폼+" + key, r))
+              for dept in ["트램건설추진단", "도시개발과", "없는부서이름12345"]:
+                  got = post({"q_depNm": dept})
+                  rs = rows_of(got)
+                  depts = sorted({r["부서"] for r in rs})
+                  ok = len(depts) == 1 and depts[0] == dept
+                  print("  {:<16} {}건 / 실제 부서: {}".format(
+                      dept, len(rs), ", ".join(depts)[:60]))
+                  print("     {} 필터 {}".format("★" if ok else " ", "먹음" if ok else "안 먹음"))
                   time.sleep(0.6)
 
               print("\n" + "=" * 62)
-              print("B. q_cp 와 q_currPage 를 함께")
+              print("2. 검색이 먹는가 — 여러 파라미터 이름으로")
               print("=" * 62)
-              for a, b in [("2", "2"), ("2", "1"), ("1", "2"), ("10", "2"), ("11", "2")]:
-                  r = try_form("q_cp={} q_currPage={}".format(a, b),
-                               {"q_cp": a, "q_currPage": b}, base)
-                  if r:
-                      hits.append(("q_cp={} q_currPage={}".format(a, b), r))
-                  time.sleep(0.6)
+              base = rows_of(p1)
+              for key in ["query", "q_query", "q_searchVal", "searchVal",
+                          "q_notAncmtNm", "q_notAncmtSj", "q_sj", "q_ttl"]:
+                  for stype in ["", "title", "TITLE", "ALL"]:
+                      got = post({key: "유통", "q_searchType": stype})
+                      rs = rows_of(got)
+                      if rs and rs != base:
+                          hit = sum(1 for r in rs if "유통" in r["제목"])
+                          print("  ★ {:<14} type={!r:<8} {}건 (제목에 '유통' {}건)".format(
+                              key, stype, len(rs), hit))
+                          if rs:
+                              print("       {}".format(rs[0]["제목"][:55]))
+                      time.sleep(0.4)
+              print("  (★ 가 없으면 검색은 안 먹는 것 — 전체 페이지를 훑어야 한다)")
 
               print("\n" + "=" * 62)
-              print("C. q_cp 를 행 오프셋으로 (10, 20 …)")
+              print("3. 몇 페이지까지가 최근 3년인가")
               print("=" * 62)
-              for v in ["0", "10", "11", "20", "21"]:
-                  r = try_form("q_cp = {}".format(v), {"q_cp": v}, base)
-                  if r:
-                      hits.append(("q_cp=" + v, r))
-                  time.sleep(0.6)
-
-              print("\n" + "=" * 62)
-              print("D. 검색 — query + q_searchType 조합")
-              print("=" * 62)
-              for st in ["", "title", "TITLE", "subject", "all", "ALL", "1", "0"]:
-                  r = try_form("query=유통 q_searchType={!r}".format(st),
-                               {"query": "유통", "q_searchType": st}, base)
-                  if r:
-                      hits.append(("query+q_searchType=" + st, r))
-                  time.sleep(0.6)
-
-              print("\n" + "=" * 62)
-              print("E. 게시판 구분 q_notAncmtSeCode 바꿔보기")
-              print("=" * 62)
-              for v in ["02", "03", "00", "10"]:
-                  r = try_form("q_notAncmtSeCode = {}".format(v),
-                               {"q_notAncmtSeCode": v}, base)
-                  if r:
-                      hits.append(("q_notAncmtSeCode=" + v, r))
-                  time.sleep(0.6)
-
-              print("\n" + "=" * 62)
-              print("F. 정렬 바꾸기 — 되면 서버가 폼을 읽고 있다는 증거")
-              print("=" * 62)
-              for v in ["TITLE", "NUM", "ASC", "DATE_ASC", "RANK"]:
-                  r = try_form("sort = {}".format(v), {"sort": v}, base)
-                  if r:
-                      hits.append(("sort=" + v, r))
-                  time.sleep(0.6)
-
-              print("\n" + "=" * 62)
-              print("G. 페이지 링크의 실제 HTML — 눈으로 확인")
-              print("=" * 62)
-              # 페이지 번호가 있는 영역을 통째로 찍는다
-              for pat in [r'<div[^>]*(?:paging|pagination|page_wrap|pageing)[^>]*>.*?</div>',
-                          r'<ul[^>]*(?:paging|pagination)[^>]*>.*?</ul>',
-                          r'<nav[^>]*>.*?</nav>']:
-                  for m in re.finditer(pat, base_html, re.S | re.I):
-                      seg = re.sub(r"\s+", " ", m.group(0))
-                      if len(seg) > 60:
-                          print("  " + seg[:1200])
-                          print()
-                          break
-
-              # 숫자 2가 들어간 앵커 태그를 전부 찾는다
-              print("  --- 숫자 링크 태그 ---")
-              shown = 0
-              for m in re.finditer(r"<a[^>]*>\s*2\s*</a>", base_html, re.I):
-                  print("  " + re.sub(r"\s+", " ", m.group(0))[:200])
-                  shown += 1
-                  if shown >= 3:
+              for p in [1, 50, 100, 150, 200, 300]:
+                  got = post({"q_currPage": str(p)})
+                  rs = rows_of(got)
+                  if not rs:
+                      print("  {:>4}p  목록 없음".format(p))
                       break
-              if not shown:
-                  for m in re.finditer(r"<a[^>]{0,200}>", base_html, re.I):
-                      tag = m.group(0)
-                      if any(w in tag.lower() for w in ["page", "cp=", "next", "다음"]):
-                          print("  " + re.sub(r"\s+", " ", tag)[:200])
-                          shown += 1
-                          if shown >= 8:
-                              break
-              if not shown:
-                  print("  (숫자 링크를 못 찾았습니다 — 스크립트로 그리는 구조일 수 있습니다)")
+                  print("  {:>4}p  {} ~ {}".format(p, rs[-1]["일자"], rs[0]["일자"]))
+                  time.sleep(0.6)
 
               print("\n" + "=" * 62)
-              print("결과")
+              print("4. 두 번째 게시판(일반공고)도 같은 방식인가")
               print("=" * 62)
-              if hits:
-                  for label, nums in hits:
-                      print("  ★ {} → {}건 | {}".format(label, len(nums), nums[:2]))
-              else:
-                  print("  아직 못 찾았습니다. 위 G 섹션의 링크 HTML 을 보내주세요.")
+              global BOARD
+              BOARD = "https://www.hscity.go.kr/www/gosi/BD_selectGosiList.do"
+              g1, g2 = post({"q_currPage": "1"}), post({"q_currPage": "2"})
+              a, b = rows_of(g1), rows_of(g2)
+              print("  1p {}건 / 2p {}건 / 다름: {}".format(len(a), len(b), a != b))
+              print("  마지막 페이지: {}".format(last_page(g1)))
+              if a:
+                  print("  1p 첫 행: {}".format(a[0]["제목"][:50]))
 
 
           if __name__ == "__main__":
