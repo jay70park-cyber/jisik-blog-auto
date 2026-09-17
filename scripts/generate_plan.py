@@ -313,7 +313,7 @@ def build_agenda_block(result):
         lines.append("")
         lines.append("이 현안으로 나온 화성시 고시·공고 (공고일 순, 최근 5건)")
         for n in notices[-5:]:
-        lines.append("  - {} [{}] {}".format(
+            lines.append("  - {} [{}] {}".format(
                 n.get("date", ""), n.get("dept", ""), n.get("title", "")))
         lines.append("")
         lines.append("  고시 제목에는 행정 절차가 그대로 드러납니다.")
