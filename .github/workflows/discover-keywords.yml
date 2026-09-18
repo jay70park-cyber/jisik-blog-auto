@@ -1,9 +1,9 @@
 name: Discover Local Keywords
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '31 22 1,15 * *'   # 매월 1일·15일 07:31 KST
+  workflow_dispatch:      # 수동만 남김
+  # schedule:
+  #   - cron: '31 22 1,15 * *'   # 매월 1일·15일 07:31 KST
 
 concurrency:
   group: jisik-blog-pipeline
