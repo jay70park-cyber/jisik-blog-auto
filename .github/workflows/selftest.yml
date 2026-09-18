@@ -149,7 +149,8 @@ jobs:
               print("      (가운데 칸은 그 줄의 들여쓰기 칸 수입니다)\n")
 
 
-          for name in ["content_rules", "collect_sources", "generate_plan", "generate_draft", "make_map"]:
+          for name in ["content_rules", "collect_sources", "generate_plan",
+                       "generate_draft", "make_map", "review_agenda"]:
               try:
                   importlib.import_module(name)
                   check(True, name)
@@ -171,6 +172,10 @@ jobs:
               import make_map
           except Exception:
               make_map = None
+          try:
+              import review_agenda as rv
+          except Exception:
+              rv = None
 
 
           # ─────────────────────────────────────────────
@@ -197,8 +202,15 @@ jobs:
               check(all(ids), "모든 행에 id 있음")
               check(len(ids) == len(set(ids)), "id 중복 없음")
 
-              bad_state = [r["id"] for r in rows if (r.get("상태") or "").strip() not in ("활성", "보류")]
-              check(not bad_state, "상태 값이 활성/보류 — 이상: {}".format(bad_state or "없음"))
+              OKST = ("활성", "보류", "완료")
+              bad_state = [r["id"] for r in rows
+                           if (r.get("상태") or "").strip() not in OKST]
+              check(not bad_state, "상태 값이 활성/보류/완료 — 이상: {}".format(
+                  bad_state or "없음"))
+              from collections import Counter as _C
+              _st = _C((r.get("상태") or "").strip() for r in rows)
+              print("      상태 분포: " + ", ".join(
+                  "{} {}건".format(k, v) for k, v in _st.most_common()))
 
               bad_date = []
               for r in rows:
@@ -510,6 +522,50 @@ jobs:
               p2 = gd.build_prompt(fake_notice, [], today, plan=plan_local, category="local")
               check("BD_selectNoticeDetail" in p2,
                     "초안 프롬프트에 고시 링크 실림 ({agenda_material} 삽입 확인)")
+
+
+          # ─────────────────────────────────────────────
+          section("6-4. 현안 점검 (1·15일)")
+          # ─────────────────────────────────────────────
+          if rv is None:
+              check(False, "review_agenda 모듈을 못 읽었습니다")
+          else:
+              cases = [
+                  ("-2 =5 +12 +21", {"-": [2], "=": [5], "+": [12, 21]}, []),
+                  ("-3", {"-": [3], "=": [], "+": []}, []),
+                  ("=1 =2 -3", {"-": [3], "=": [1, 2], "+": []}, []),
+                  ("2 5", {"-": [], "=": [], "+": []}, ["2", "5"]),
+                  ("-2 3 +11", {"-": [2], "=": [], "+": [11]}, ["3"]),
+              ]
+              ok = True
+              for text, want, want_bad in cases:
+                  got, bad = rv.parse_reply(text)
+                  if got != want or bad != want_bad:
+                      ok = False
+                      print("      {!r} → {} {} (기대 {} {})".format(
+                          text, got, bad, want, want_bad))
+              check(ok, "답장 파싱 {}가지".format(len(cases)))
+
+              check(rv.next_id([]) == "A001", "빈 목록이면 A001")
+              check(rv.next_id([{"id": "A00%d" % i} for i in range(1, 10)]) == "A010",
+                    "A009 다음은 A010")
+
+              # 보류·완료가 순환에서 빠지는지 — 실제 CSV 로
+              with open(os.path.join("data", "local_agenda.csv"),
+                        encoding="utf-8-sig", newline="") as f:
+                  allrows = list(csv.DictReader(f))
+              cyc = {r["id"] for r in cs.load_agenda()}
+              out = {r["id"] for r in allrows
+                     if (r.get("상태") or "").strip() in ("보류", "완료")}
+              check(not (cyc & out),
+                    "보류·완료는 순환에서 빠짐 (해당 {}건)".format(len(out)))
+              check(len(cyc) > 0, "순환 대상 {}건".format(len(cyc)))
+
+              check(rv.similar_to("동탄|화성|조성", allrows) == [],
+                    "흔한 말만으로는 중복 표시 안 함")
+              check(rv.BASE_EXISTING < rv.BASE_NEWS < rv.BASE_NOTICE,
+                    "번호대 순서 (기존 {} < 뉴스 {} < 고시 {})".format(
+                        rv.BASE_EXISTING, rv.BASE_NEWS, rv.BASE_NOTICE))
 
 
           # ─────────────────────────────────────────────

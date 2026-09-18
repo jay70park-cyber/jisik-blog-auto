@@ -1,0 +1,58 @@
+name: 현안 점검 (1·15일)
+
+# local_agenda.csv 를 갱신하는 유일한 자동 경로.
+# 뉴스·고시에서 후보를 뽑아 텔레그램으로 보내고, 답장대로 반영한다.
+# 무응답이면 아무것도 바꾸지 않는다.
+on:
+  workflow_dispatch:
+    inputs:
+      wait_seconds:
+        description: '답장 대기 시간(초)'
+        default: '600'
+  schedule:
+    # KST 아침을 UTC 로 쓰면 날짜가 하루 당겨진다(22:31 UTC = 다음날 07:31 KST).
+    # 1·15일이라는 날짜를 지키려면 UTC 00:00~14:59 안에 있어야 한다.
+    - cron: '31 0 1,15 * *'     # 09:31 KST — 1·15일
+
+concurrency:
+  group: agenda-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      LANG: C.UTF-8
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      REVIEW_WAIT_SECONDS: ${{ github.event.inputs.wait_seconds || '600' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 변경 전 상태
+        run: |
+          echo "--- 현안 수 ---"
+          python -c "import csv;r=list(csv.DictReader(open('data/local_agenda.csv',encoding='utf-8-sig')));print(len(r),'행');print({x['상태'] for x in r})"
+
+      - name: 현안 점검
+        run: python3 scripts/review_agenda.py
+
+      - name: 결과 커밋
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/local_agenda.csv
+          git diff --cached --quiet || git commit -m "현안 목록 갱신 [skip ci]"
+          git pull --rebase origin main || true
+          git push || true
