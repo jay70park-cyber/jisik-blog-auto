@@ -256,6 +256,56 @@ def build_agenda_material(result):
     lines.append("")
     return "\n".join(lines)
     
+    plans = a.get("관련계획") or []
+    if plans:
+        lines += [
+            "",
+            "■ 중기지방재정계획에 잡힌 예산 (단위: 억원)",
+        ]
+        for p in plans:
+            lines.append("  {} [{}]".format(
+                p.get("사업명", ""), p.get("출처", "")))
+            lines.append("      총사업비 {} · 이미 집행 {} · 남은 것 {}".format(
+                _eok(p.get("총사업비")), _eok(p.get("기투자")),
+                _eok(p.get("향후"))))
+            yrs = " / ".join("{}년 {}".format(y, _eok(v))
+                             for y, v in (p.get("연도별") or []))
+            if yrs:
+                lines.append("      " + yrs)
+            if p.get("사업개요"):
+                lines.append("      " + p["사업개요"][:110])
+        lines += [
+            "",
+            "  [재정계획을 다룰 때 반드시 지킬 것]",
+            "  - 이것은 예산 배정입니다. 확정된 사실이 아닙니다.",
+            "    '2028년에 4,257억이 잡혀 있다'는 맞지만",
+            "    '2028년에 4,257억을 쓴다'는 틀립니다.",
+            "  - 계획 시점을 밝히세요. 예: '2026~2030 계획에서는'",
+            "  - 집행 진도(이미 집행 ÷ 총사업비)는 쓸 만한 숫자입니다.",
+            "    다만 그것이 공정률은 아닙니다. 돈과 공사는 다릅니다.",
+            "  - 키워드로 걸러온 목록이라 무관한 사업이 섞일 수 있습니다.",
+            "    사업명이 이 글의 주제와 닿지 않으면 쓰지 마세요.",
+            "  - 고시나 회의록의 숫자와 다르면 그 차이를 그대로 쓰세요.",
+            "    어느 쪽이 맞다고 단정하지 말고, 출처를 밝혀 나란히 두세요.",
+            "    범위나 시점이 달라서 생기는 차이일 수 있습니다.",
+        ]
+        
+def _eok(v):
+    """억원 단위 숫자를 사람이 읽는 꼴로."""
+    if v is None:
+        return "?"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "?"
+    if v < 0.005:
+        return "0"
+    if v >= 10000:
+        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
+    if v >= 1:
+        return "{:,.0f}억".format(v)
+    return "{:.2f}억".format(v)        
+    
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
