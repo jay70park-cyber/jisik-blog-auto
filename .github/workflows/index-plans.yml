@@ -1,0 +1,86 @@
+name: 재정계획 색인 (index-plans)
+
+# 수동 실행 전용. data/plans/ 의 PDF·텍스트를 읽어
+# data/plan_projects.csv 를 다시 만든다.
+#
+# 새 계획이 나올 때만 돌리면 된다. 해마다 한 번쯤이다.
+on:
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: '색인만 하고 저장하지 않기'
+        type: boolean
+        default: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      LANG: C.UTF-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: PDF 라이브러리 설치
+        # 추출기마다 줄바꿈 자리가 달라 결과가 갈린다.
+        # 둘 다 깔고 스크립트가 더 나은 쪽을 고르게 한다.
+        run: pip install pypdf pdfplumber
+
+      - name: 계획 파일 확인
+        run: |
+          mkdir -p data/plans
+          echo "--- data/plans ---"
+          ls -la data/plans/ || true
+          n=$(ls data/plans/*.pdf data/plans/*.txt 2>/dev/null | wc -l)
+          echo "계획 파일 ${n}개"
+          if [ "$n" -eq 0 ]; then
+            echo "::warning::data/plans/ 에 계획 PDF 나 텍스트를 넣으세요."
+          fi
+
+      - name: 색인
+        run: |
+          if [ "${{ github.event.inputs.check_only }}" = "true" ]; then
+            python3 scripts/index_plans.py --check
+          else
+            python3 scripts/index_plans.py
+          fi
+
+      - name: 결과 요약
+        if: github.event.inputs.check_only != 'true'
+        run: |
+          python3 - <<'EOF'
+          import csv, os
+          from collections import Counter
+          p = "data/plan_projects.csv"
+          if not os.path.exists(p):
+              print("색인 파일이 만들어지지 않았습니다."); raise SystemExit(1)
+          rows = list(csv.DictReader(open(p, encoding="utf-8-sig")))
+          print("총 {}건".format(len(rows)))
+          for s, c in Counter(r["출처"] for r in rows).most_common():
+              u = {r["단위"] for r in rows if r["출처"] == s}
+              print("  {:<46} {:>5}건  단위 {}".format(
+                  s[:46], c, ", ".join(sorted(u)) or "(빈칸)"))
+          bad = [r["출처"] for r in rows if not r["단위"].strip()]
+          if bad:
+              print("\n⚠ 단위가 빈 사업 {}건 — CSV 의 '단위' 열을 직접 채우세요."
+                    .format(len(bad)))
+              print("  비워두면 금액이 억원으로 취급돼 자릿수가 어긋납니다.")
+          EOF
+
+      - name: 커밋
+        if: github.event.inputs.check_only != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/plan_projects.csv data/plans/
+          git diff --cached --quiet || git commit -m "재정계획 색인 갱신 [skip ci]"
+          git pull --rebase origin main || true
+          git push || true
