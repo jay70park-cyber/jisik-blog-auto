@@ -150,7 +150,8 @@ jobs:
 
 
           for name in ["content_rules", "collect_sources", "generate_plan",
-                       "generate_draft", "make_map", "review_agenda"]:
+                       "generate_draft", "make_map", "review_agenda",
+                       "index_plans"]:
               try:
                   importlib.import_module(name)
                   check(True, name)
@@ -566,6 +567,92 @@ jobs:
               check(rv.BASE_EXISTING < rv.BASE_NEWS < rv.BASE_NOTICE,
                     "번호대 순서 (기존 {} < 뉴스 {} < 고시 {})".format(
                         rv.BASE_EXISTING, rv.BASE_NEWS, rv.BASE_NOTICE))
+
+
+          # ─────────────────────────────────────────────
+          section("6-5. 중기지방재정계획")
+          # ─────────────────────────────────────────────
+          ppath = os.path.join("data", "plan_projects.csv")
+          if not os.path.exists(ppath):
+              print("      색인 파일이 없습니다: {}".format(ppath))
+              print("      data/plans/ 에 계획 텍스트를 넣고 index_plans.py 를 돌리세요.")
+              print("      (아직 안 쓰는 기능이면 이 섹션은 넘어가도 됩니다)")
+          else:
+              with open(ppath, encoding="utf-8-sig", newline="") as f:
+                  prows = list(csv.DictReader(f))
+              check(len(prows) > 0, "재정계획 사업 {}건".format(len(prows)))
+
+              from collections import Counter as _PC
+              bysrc = _PC(r.get("출처", "") for r in prows)
+              for s, c in bysrc.most_common():
+                  u = {r.get("단위", "") for r in prows if r.get("출처") == s}
+                  print("      {:<44} {:>5}건  단위 {}".format(
+                      s[:44], c, ", ".join(sorted(u)) or "(빈칸)"))
+
+              # 단위가 비어 있으면 금액이 환산되지 않아 자릿수가 어긋난다
+              nounit = [r["출처"] for r in prows if not (r.get("단위") or "").strip()]
+              check(not nounit, "모든 사업에 단위 있음 — 빈 것 {}건".format(len(nounit)))
+              if nounit:
+                  print("      ⚠ CSV 의 '단위' 열을 직접 채우세요. 비우면 억원으로 취급됩니다.")
+
+              # 금액 환산
+              check(abs(cs.to_eok(1070101, "백만원") - 10701.01) < 0.1,
+                    "백만원 → 억원 환산")
+              check(cs.to_eok(2304, "억원") == 2304, "억원은 그대로")
+              check(cs.fmt_eok(0) == "0", "0 은 '0' 으로 (0.00억 아님)")
+              check("조" in cs.fmt_eok(10701), "1조 넘으면 조 단위 병기")
+
+              # 현안별 매칭
+              with open(os.path.join("data", "local_agenda.csv"),
+                        encoding="utf-8-sig", newline="") as f:
+                  arows = list(csv.DictReader(f))
+              total = 0
+              print("\n      [현안별 재정계획]")
+              for r in arows:
+                  got = cs.load_plans(r)
+                  total += len(got)
+                  mark = "O" if got else "."
+                  print("      {} {} {:<16} {}건".format(
+                      mark, r.get("id", ""), (r.get("현안명") or "")[:16], len(got)))
+                  for p in got[:2]:
+                      print("            {} · 총 {}".format(
+                          (p.get("사업명") or "")[:38], cs.fmt_eok(p.get("총사업비"))))
+              check(total > 0, "현안에 걸린 사업 총 {}건".format(total))
+              print("      (0건인 현안은 시 예산에 없는 사업일 수 있습니다 — 메모 열 참조)")
+
+              # 프롬프트에 실리는지
+              hit = next((r for r in arows if cs.load_plans(r)), None)
+              if hit:
+                  plans = cs.load_plans(hit)
+                  fake = {
+                      "track": "local", "category": "지역이슈",
+                      "category_display": "동탄 지역 개발 이슈",
+                      "top_keyword": hit.get("현안명", ""),
+                      "rows": [{"keyword": "x", "blog": 1, "cafe": 1,
+                                "trend": 1.0, "score": 1.0}],
+                      "agenda": {
+                          "id": hit.get("id", ""), "현안명": hit.get("현안명", ""),
+                          "분류": hit.get("분류", ""), "단계": hit.get("단계", ""),
+                          "최근진전일": hit.get("최근진전일", ""),
+                          "진전내용": hit.get("진전내용", ""),
+                          "중요도": "상", "키워드": hit.get("키워드", ""),
+                          "메모": "", "확인필요": "", "선정사유": "",
+                          "최근뉴스": [], "관련고시": [], "관련계획": plans,
+                      },
+                  }
+                  blk = gp.build_agenda_block(fake)
+                  check("중기지방재정계획" in blk or "재정계획" in blk,
+                        "기획 프롬프트에 재정계획 실림")
+                  check("확정된 사실이 아" in blk or "확정이 아" in blk,
+                        "기획에 '배정이지 확정 아님' 경고 있음")
+
+                  mat = gd.build_agenda_material(fake)
+                  check("재정계획" in mat, "초안 재료에 재정계획 실림")
+                  check("공정률" in mat, "초안에 '집행 진도 ≠ 공정률' 경고 있음")
+
+                  p2 = gd.build_prompt(fake, [], today, plan=plan_local, category="local")
+                  check(plans[0]["사업명"][:12] in p2,
+                        "초안 프롬프트에 사업명 실림")
 
 
           # ─────────────────────────────────────────────
