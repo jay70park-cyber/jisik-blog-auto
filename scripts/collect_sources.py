@@ -58,6 +58,7 @@ LOCAL_FALLBACK_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 �
 
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
 NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
+PLAN_CSV = os.path.join("data", "plan_projects.csv")
 STATE_DIR = "state"
 ROTATION_STATE_FILE = os.path.join(STATE_DIR, "rotation_index.txt")
 AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
@@ -68,6 +69,7 @@ NEWS_DAYS = 14         # 구글 뉴스를 이 기간만 센다
 NOTICE_DAYS = 1825     # 고시는 연표 재료다. 시작점이 있어야 흐름이 보인다
                        # 백필이 부서별로 몇 년치를 가져오므로 넓게 잡는다
 NOTICE_LIMIT = 10      # 한 현안에 붙일 고시 최대 건수
+PLAN_LIMIT = 6        # 한 현안에 붙일 재정계획 사업 최대 건수
 
 
 # ─────────────────────────────────────────────
@@ -320,6 +322,100 @@ def pick_agenda():
     return pick, log, pick["_why"]
 
 
+def to_eok(value, unit):
+    """금액을 억원으로 통일한다.
+
+    파일마다 단위가 다르다. 경기도는 억원, 화성시는 백만원이다.
+    그대로 넘기면 "1,070,101" 이 1조인지 107만원인지 모델이 헷갈린다.
+    억원 하나로 맞춰서 넘긴다.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    u = (unit or "").strip()
+    if u == "백만원":
+        return v / 100.0
+    if u == "천원":
+        return v / 100000.0
+    if u == "원":
+        return v / 100000000.0
+    return v            # 억원이거나 모름 — 그대로 둔다
+
+
+def fmt_eok(v):
+    if v is None:
+        return "?"
+    if v < 0.005:
+        return "0"
+    if v >= 10000:
+        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
+    if v >= 1:
+        return "{:,.0f}억".format(v)
+    return "{:.2f}억".format(v)
+
+
+def load_plans(agenda_row):
+    """이 현안에 걸린 중기지방재정계획 사업을 돌려준다.
+
+    고시는 '결정했다'를, 회의록은 '논의 중이다'를 알려준다.
+    재정계획은 그 둘에 없는 것을 알려준다 — 언제 얼마를 쓸 계획인가.
+    집행 진도(기투자/총사업비)와 연도별 배정이 여기서만 나온다.
+
+    단위가 파일마다 달라 억원으로 통일해서 넘긴다.
+    """
+    if not os.path.exists(PLAN_CSV):
+        return []
+    name = (agenda_row.get("현안명") or "").strip()
+    words = [w.strip() for w in (agenda_row.get("키워드") or "").split("|")
+             if w.strip()]
+    if not words:
+        return []
+
+    out = []
+    with open(PLAN_CSV, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            title = r.get("사업명") or ""
+            desc = r.get("사업개요") or ""
+            # 사업명에 걸린 것이 개요에만 걸린 것보다 확실하다.
+            # "공동주택" 한 낱말로 음식물쓰레기 종량제가 걸리는 일이 있어
+            # 점수를 매겨 정렬하고, 최종 판단은 프롬프트에 맡긴다.
+            score = 0
+            for w in words:
+                if w in title:
+                    score += 3
+                elif w in desc:
+                    score += 1
+            if score == 0:
+                continue
+            unit = r.get("단위", "")
+            try:
+                y0 = int(r.get("기준연도") or 0)
+            except ValueError:
+                y0 = 0
+            years = []
+            for k in range(1, 6):
+                v = to_eok(r.get("y%d" % k), unit)
+                if v is not None:
+                    years.append((y0 + k - 1 if y0 else k, v))
+            out.append({
+                "점수": score,
+                "출처": r.get("계획명", "") or r.get("출처", ""),
+                "계획기간": r.get("계획기간", ""),
+                "사업명": r.get("사업명", ""),
+                "사업개요": r.get("사업개요", ""),
+                "총사업비": to_eok(r.get("총사업비"), unit),
+                "기투자": to_eok(r.get("기투자"), unit),
+                "향후": to_eok(r.get("향후"), unit),
+                "연도별": years,
+            })
+
+    # 확실한 것부터, 같으면 규모가 큰 것부터.
+    # 작은 부대사업보다 본 사업이 먼저 보여야 한다.
+    out.sort(key=lambda r: (-r["점수"], -(r["총사업비"] or 0)))
+    return out[:PLAN_LIMIT]
+
+
 def load_notices(agenda_row):
     """이 현안에 걸린 화성시 고시를 공고일 순으로 돌려준다.
 
@@ -513,6 +609,7 @@ def main():
             "선정사유": agenda.get("_why", ""),
             "최근뉴스": [{"date": d, "title": t} for d, t in agenda.get("_news", [])[:8]],
             "관련고시": load_notices(agenda),
+            "관련계획": load_plans(agenda),
         }
         write_last_agenda_id(agenda["id"])
         mark_published(agenda["id"])
@@ -537,6 +634,12 @@ def main():
             lines.append("관련 고시 {}건".format(len(a["관련고시"])))
             for n in a["관련고시"][-4:]:
                 lines.append("  " + n["date"] + " " + n["title"][:50])
+        if a.get("관련계획"):
+            lines.append("")
+            lines.append("재정계획 {}건".format(len(a["관련계획"])))
+            for p in a["관련계획"][:3]:
+                lines.append("  {} · 총 {}".format(
+                    p["사업명"][:34], fmt_eok(p["총사업비"])))
         if a["최근뉴스"]:
             lines.append("")
             lines.append("최근 뉴스")
