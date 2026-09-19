@@ -25,11 +25,18 @@
 **단위가 파일마다 다르다.** 경기도는 억원, 화성시는 백만원이다.
 머리말에서 읽어내고, 못 읽으면 사람이 CSV 에서 고치게 남겨둔다.
 
+**PDF 를 그대로 넣어도 된다.** 텍스트로 미리 바꿀 필요가 없다.
+pypdf 와 pdfplumber 를 둘 다 시도해 사업이 더 많이 잡히는 쪽을 쓴다.
+추출기마다 줄바꿈 자리가 달라 파서가 먹고 안 먹고가 갈리기 때문이다.
+추출한 텍스트는 data/plans/_extracted/ 에 남겨 두므로,
+건수가 이상하면 그 파일을 열어 눈으로 확인하면 된다.
+
 사용
-    python3 scripts/index_plans.py            # data/plans/*.txt 전부
+    python3 scripts/index_plans.py            # data/plans/ 의 pdf·txt 전부
     python3 scripts/index_plans.py --check    # 색인만 하고 저장 안 함
 
 출력  data/plan_projects.csv
+      data/plans/_extracted/*.txt   (PDF 에서 뽑은 원문)
 """
 import os
 import re
@@ -63,6 +70,67 @@ UNIT_PAT = re.compile(r"단위\s*[:：]\s*(백만원|억원|천원|원)")
 
 # 계획 기간 — "2026~2030" 또는 "2026 ~ 2030"
 RANGE_PAT = re.compile(r"(20\d\d)\s*[~∼-]\s*(20\d\d)")
+
+
+EXTRACT_DIR = os.path.join(PLAN_DIR, "_extracted")
+
+
+def extract_pypdf(path):
+    from pypdf import PdfReader
+    reader = PdfReader(path)
+    return "\n".join((p.extract_text() or "") for p in reader.pages)
+
+
+def extract_pdfplumber(path):
+    import pdfplumber
+    out = []
+    with pdfplumber.open(path) as pdf:
+        for p in pdf.pages:
+            out.append(p.extract_text() or "")
+    return "\n".join(out)
+
+
+def count_anchors(text):
+    """사업 블록이 몇 개나 잡힐지 어림한다. 추출기를 고르는 잣대."""
+    n = 0
+    for l in text.split("\n"):
+        if PERIOD.search(l.strip()):
+            n += 1
+    return n
+
+
+def load_text(path):
+    """PDF 든 텍스트든 문자열로 돌려준다.
+
+    PDF 는 추출기마다 결과가 딴판이다. 줄바꿈이 어디 들어가느냐에 따라
+    '기간:' 앵커가 살기도 죽기도 한다. 그래서 둘 다 돌려보고
+    앵커가 많이 잡히는 쪽을 쓴다.
+    """
+    if not path.lower().endswith(".pdf"):
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(), "text"
+
+    best, best_n, best_how = "", -1, ""
+    for how, fn in (("pypdf", extract_pypdf),
+                    ("pdfplumber", extract_pdfplumber)):
+        try:
+            t = fn(path)
+        except Exception as e:
+            print("   {} 실패: {}".format(how, e))
+            continue
+        n = count_anchors(t)
+        print("   {:<11} {:>7,}자 · 앵커 {:>4}개".format(how, len(t), n))
+        if n > best_n:
+            best, best_n, best_how = t, n, how
+
+    if best:
+        os.makedirs(EXTRACT_DIR, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        out = os.path.join(EXTRACT_DIR, stem + ".txt")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(best)
+        print("   → {} 채택, 원문 저장: {}".format(best_how, out))
+    return best, best_how
 
 
 def money(s):
@@ -110,9 +178,12 @@ def base_year(period, lines):
 
 
 def parse_file(path):
-    """한 파일에서 사업 블록을 뽑는다."""
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = [l.rstrip() for l in f]
+    """한 파일에서 사업 블록을 뽑는다. PDF 도 받는다."""
+    text, how = load_text(path)
+    if not text.strip():
+        print("   본문을 못 읽었습니다. 스캔 PDF 라면 OCR 이 필요합니다.")
+        return [], "", os.path.basename(path), ""
+    lines = [l.rstrip() for l in text.split("\n")]
 
     src = os.path.basename(path)
     unit = detect_unit(lines)
@@ -178,20 +249,21 @@ def main():
     check = "--check" in sys.argv
     if not os.path.isdir(PLAN_DIR):
         print("계획 폴더가 없습니다: " + PLAN_DIR)
-        print("PDF 를 텍스트로 바꿔 이 폴더에 넣으세요.")
+        print("계획 PDF 나 텍스트를 이 폴더에 넣으세요.")
         return
 
     files = sorted(f for f in os.listdir(PLAN_DIR)
-                   if f.lower().endswith((".txt", ".md")))
+                   if f.lower().endswith((".txt", ".md", ".pdf")))
     if not files:
         print("계획 파일이 없습니다: " + PLAN_DIR)
         return
 
     rows = []
     for fn in files:
+        print("\n[{}]".format(fn))
         got, unit, name, period = parse_file(os.path.join(PLAN_DIR, fn))
-        print("{:<40} {:>5}건  단위 {:<5} {} {}".format(
-            fn[:40], len(got), unit or "??", name[:20], period))
+        print("   {:>5}건  단위 {:<5} {} {}".format(
+            len(got), unit or "??", name[:20], period))
         if not unit:
             print("   ⚠ 단위를 못 읽었습니다. CSV 의 '단위' 열을 직접 채우세요.")
         rows += got
