@@ -270,6 +270,22 @@ def format_council(rows, track):
         head = ("[참고 — 최근 화성특례시의회 회의록]\n"
                 "주제와 닿는 내용이 있으면 소재로 쓰세요. 없으면 무시하세요.\n")
     return head + body + "\n"
+  
+def _eok(v):
+    """억원 단위 숫자를 사람이 읽는 꼴로."""
+    if v is None:
+        return "?"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "?"
+    if v < 0.005:
+        return "0"
+    if v >= 10000:
+        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
+    if v >= 1:
+        return "{:,.0f}억".format(v)
+    return "{:.2f}억".format(v)
 
 def build_agenda_block(result):
     """collect_sources 가 고른 현안을 프롬프트용 블록으로 만든다.
@@ -336,6 +352,26 @@ def build_agenda_block(result):
         lines.append("  '열람·의견청취'는 심의 전, '결정 고시'는 확정,")
         lines.append("  '실시계획 인가'는 착공 직전, '재결·수용'은 보상 단계입니다.")
         lines.append("  이 순서가 곧 사업의 진행 흐름입니다.")  
+      
+    plans = a.get("관련계획") or []
+    if plans:
+        lines.append("")
+        lines.append("이 현안과 닿는 중기지방재정계획 사업 (금액 단위: 억원)")
+        for p in plans:
+            lines.append("  - {} [{}]".format(
+                p.get("사업명", ""), p.get("출처", "")))
+            lines.append("      총 {} · 기투자 {} · 향후 {}".format(
+                _eok(p.get("총사업비")), _eok(p.get("기투자")),
+                _eok(p.get("향후"))))
+            yrs = " / ".join("{}년 {}".format(y, _eok(v))
+                             for y, v in (p.get("연도별") or []))
+            if yrs:
+                lines.append("      " + yrs)
+        lines.append("")
+        lines.append("  이것은 예산 배정이지 확정된 사실이 아닙니다.")
+        lines.append("  '계획에 잡혀 있다'와 '그렇게 된다'는 다릅니다.")
+        lines.append("  키워드로 걸러온 목록이라 이 현안과 무관한 사업이")
+        lines.append("  섞여 있을 수 있습니다. 사업명을 보고 직접 판단하세요.")
       
     news = a.get("최근뉴스") or []
     if news:
