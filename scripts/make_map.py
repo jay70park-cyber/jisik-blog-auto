@@ -10,14 +10,27 @@
 "이 사안이 동탄 어느 쪽이고 테크노밸리에서 어느 방향인가"를
 전달하는 것이 목적이다. 그래서 캡션에 개념도임을 반드시 밝힌다.
 
-좌표는 data/local_agenda.csv 의 위도·경도 열에서 읽는다.
+좌표는 두 군데에서 읽는다.
+
+  점 하나  data/local_agenda.csv 의 위도·경도 열
+  선       data/agenda_lines.csv 에 같은 id 로 두 점 이상
+
+도로·철도처럼 선으로 놓인 현안은 핀 하나로는 뜻이 안 통한다.
+"가까운데 산이 가로막아 못 간다" 같은 이야기는 선을 그어야 보인다.
+선을 쓰는 현안이 하나뿐이라 local_agenda.csv 의 열을 늘리는 대신
+별도 파일로 뒀다. 점이 없는 현안은 지금까지처럼 핀 하나로 그린다.
+
 값이 없으면 지도를 그리지 않는다. 틀린 핀은 없느니만 못하다.
+같은 이유로 좌표를 모르는 지형지물(산 따위)은 핀을 찍지 않고
+선 가운데에 글자로만 얹는다.
 
 Maps 를 신청한 뒤에는 draw_map() 만 정적지도 호출로 바꾸면 되고,
 부르는 쪽은 손대지 않아도 된다.
 """
 import io
 import os
+import csv
+import math
 import base64
 
 import matplotlib
@@ -39,18 +52,24 @@ LANDMARKS = [
 ]
 
 STYLE = {
-    "rail": dict(color="#B8451D", marker="s", size=90),
-    "biz":  dict(color="#1F3C88", marker="^", size=95),
-    "park": dict(color="#4C8C4A", marker="o", size=70),
-    "town": dict(color="#9FB3D9", marker="o", size=70),
+    "rail":  dict(color="#B8451D", marker="s", size=90),
+    "biz":   dict(color="#1F3C88", marker="^", size=95),
+    "park":  dict(color="#4C8C4A", marker="o", size=70),
+    "town":  dict(color="#9FB3D9", marker="o", size=70),
     "target": dict(color="#C9932F", marker="*", size=420),
+    "route": dict(color="#C9932F", marker="o", size=150),
 }
+
+ROUTE_COLOR = "#C9932F"
+ROUTE_EDGE = "#8A6410"
 
 FONT_PATHS = [
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
 ]
+
+LINE_CSV = os.path.join("data", "agenda_lines.csv")
 
 
 def _use_korean_font():
@@ -77,7 +96,10 @@ def dist_km(lat1, lng1, lat2, lng2):
 
 
 def parse_point(row):
-    """local_agenda.csv 한 행에서 (위도, 경도)를 꺼낸다. 없으면 None."""
+    """한 행에서 (위도, 경도)를 꺼낸다. 없으면 None.
+
+    local_agenda.csv 와 agenda_lines.csv 가 열 이름을 공유한다.
+    """
     try:
         lat = float(str(row.get("위도", "")).strip())
         lng = float(str(row.get("경도", "")).strip())
@@ -89,15 +111,59 @@ def parse_point(row):
     return lat, lng
 
 
-def draw_map(targets, title="", width=7.0, height=5.0, dpi=150):
+def load_line(agenda_id, path=LINE_CSV):
+    """선형 현안의 지점들을 순번대로 돌려준다.
+
+    반환  ([(지점명, 위도, 경도), ...], 구간설명)
+          파일이 없거나 해당 id 가 없으면 ([], "")
+
+    구간설명은 그 id 의 행 중 처음 채워진 값을 쓴다.
+    선 가운데에 얹을 글자다. 산 이름처럼 좌표를 모르는 것을
+    여기에 적는다.
+    """
+    if not agenda_id or not os.path.exists(path):
+        return [], ""
+    want = str(agenda_id).strip()
+    rows, label = [], ""
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                if (r.get("id") or "").strip() != want:
+                    continue
+                if not label:
+                    label = (r.get("구간설명") or "").strip()
+                pt = parse_point(r)
+                if not pt:
+                    continue
+                try:
+                    seq = int(str(r.get("순번", "")).strip() or 0)
+                except ValueError:
+                    seq = 0
+                rows.append((seq, (r.get("지점명") or "").strip(),
+                             pt[0], pt[1]))
+    except Exception as e:
+        print("선형 좌표를 읽지 못했습니다: {}".format(e))
+        return [], ""
+    rows.sort(key=lambda x: x[0])
+    return [(n, la, ln) for _, n, la, ln in rows], label
+
+
+def draw_map(targets, title="", line=None, line_label="",
+             width=7.0, height=5.0, dpi=150):
     """개념도를 그려 base64 data URI 로 돌려준다.
 
-    targets  [(이름, 위도, 경도), ...]  이번 글의 대상
-    반환      data:image/png;base64,... 또는 None
+    targets     [(이름, 위도, 경도), ...]  점으로 찍을 대상
+    line        [(이름, 위도, 경도), ...]  순서대로 이을 지점들
+    line_label  선 가운데에 얹을 글자 (없으면 생략)
+    반환         data:image/png;base64,... 또는 None
     """
-    pts = [(n, la, ln) for n, la, ln in targets
+    pts = [(n, la, ln) for n, la, ln in (targets or [])
            if la is not None and ln is not None]
-    if not pts:
+    seg = [(n, la, ln) for n, la, ln in (line or [])
+           if la is not None and ln is not None]
+    if len(seg) < 2:
+        seg = []
+    if not pts and not seg:
         return None
 
     if not _use_korean_font():
@@ -105,10 +171,13 @@ def draw_map(targets, title="", width=7.0, height=5.0, dpi=150):
         return None
     plt.rcParams["axes.unicode_minus"] = False
 
-    all_lat = [la for _, la, _ in pts] + [l for _, l, _, _ in LANDMARKS]
-    all_lng = [ln for _, _, ln in pts] + [g for _, _, g, _ in LANDMARKS]
-    pad_lat = max(0.012, (max(all_lat) - min(all_lat)) * 0.28)
-    pad_lng = max(0.015, (max(all_lng) - min(all_lng)) * 0.28)
+    focus = pts + seg
+    all_lat = [la for _, la, _ in focus] + [l for _, l, _, _ in LANDMARKS]
+    all_lng = [ln for _, _, ln in focus] + [g for _, _, g, _ in LANDMARKS]
+    # 선형일 때는 양끝 이름표가 바깥으로 나가므로 여백을 더 둔다
+    grow = 0.36 if seg else 0.28
+    pad_lat = max(0.014, (max(all_lat) - min(all_lat)) * grow)
+    pad_lng = max(0.022, (max(all_lng) - min(all_lng)) * grow)
 
     fig, ax = plt.subplots(figsize=(width, height), dpi=dpi)
     ax.set_facecolor("#F7F9FC")
@@ -124,9 +193,11 @@ def draw_map(targets, title="", width=7.0, height=5.0, dpi=150):
 
     # 동탄역에서 멀리 떨어진 대상은 거리를 함께 보여준다.
     # 개념도는 축척이 없어서, 멀다는 사실만으로는 감이 안 온다.
+    # 선형일 때는 시점 하나만 잰다. 양끝을 다 이으면 그림이 어지럽다.
     hub = next(((la, ln) for n, la, ln, _ in LANDMARKS if n == "동탄역"), None)
+    far_pts = pts if pts else seg[:1]
     if hub:
-        for name, la, ln in pts:
+        for name, la, ln in far_pts:
             km = dist_km(hub[0], hub[1], la, ln)
             if km < FAR_KM:
                 continue
@@ -139,16 +210,62 @@ def draw_map(targets, title="", width=7.0, height=5.0, dpi=150):
                         bbox=dict(boxstyle="round,pad=0.25", fc="white",
                                   ec="#D5DBE5", lw=0.7))
 
-    # 이번 글의 대상
+    # 선형 현안 — 구간을 긋고 양끝에 이름을 단다
+    if seg:
+        xs = [ln for _, _, ln in seg]
+        ys = [la for _, la, _ in seg]
+        ax.plot(xs, ys, color=ROUTE_COLOR, linewidth=3.6, zorder=5,
+                solid_capstyle="round", alpha=0.95)
+        # 이름표를 선 방향 바깥으로 민다. 가운데에 몰아 두면
+        # 양끝 이름과 구간설명이 서로 겹친다.
+        # 화면상 기울기는 위도 보정(1/0.8) 때문에 데이터 기울기와 다르다.
+        sx = seg[-1][2] - seg[0][2]
+        sy = (seg[-1][1] - seg[0][1]) / 0.8
+        norm = math.hypot(sx, sy) or 1.0
+        ux, uy = sx / norm, sy / norm
+
+        st = STYLE["route"]
+        for i, (name, la, ln) in enumerate(seg):
+            ax.scatter(ln, la, s=st["size"], c=st["color"],
+                       marker=st["marker"], zorder=6,
+                       edgecolors="white", linewidths=1.8)
+            if i == 0:
+                ox, oy = -ux * 38, -uy * 38
+            elif i == len(seg) - 1:
+                ox, oy = ux * 38, uy * 38
+            else:
+                ox, oy = 0, 18          # 중간 경유지는 위로
+            ha = "right" if ox < -8 else ("left" if ox > 8 else "center")
+            ax.annotate(name, (ln, la), xytext=(ox, oy),
+                        textcoords="offset points", ha=ha, va="center",
+                        fontsize=10.5, fontweight="bold", color=ROUTE_EDGE,
+                        zorder=7,
+                        bbox=dict(boxstyle="round,pad=0.3", fc="#FFF8E7",
+                                  ec=ROUTE_COLOR, lw=0.8))
+        if line_label:
+            m = len(seg) // 2
+            if len(seg) % 2 == 0:
+                a, b = seg[m - 1], seg[m]
+                mx, my = (a[2] + b[2]) / 2.0, (a[1] + b[1]) / 2.0
+            else:
+                mx, my = seg[m][2], seg[m][1]
+            # 선과 직각으로 비켜 놓는다
+            ax.annotate(line_label, (mx, my), xytext=(-uy * 62, ux * 62),
+                        textcoords="offset points", ha="center", va="center",
+                        fontsize=9.5, color="#7A5A12", zorder=7,
+                        bbox=dict(boxstyle="round,pad=0.28", fc="white",
+                                  ec=ROUTE_COLOR, lw=0.8))
+
+    # 이번 글의 대상 (점)
     st = STYLE["target"]
     for name, la, ln in pts:
         ax.scatter(ln, la, s=st["size"], c=st["color"], marker=st["marker"],
-                   zorder=6, edgecolors="#8A6410", linewidths=1.0)
+                   zorder=6, edgecolors=ROUTE_EDGE, linewidths=1.0)
         ax.annotate(name, (ln, la), xytext=(0, 16),
                     textcoords="offset points", ha="center",
-                    fontsize=11, fontweight="bold", color="#8A6410", zorder=7,
+                    fontsize=11, fontweight="bold", color=ROUTE_EDGE, zorder=7,
                     bbox=dict(boxstyle="round,pad=0.3", fc="#FFF8E7",
-                              ec="#C9932F", lw=0.8))
+                              ec=ROUTE_COLOR, lw=0.8))
 
     ax.set_xlim(min(all_lng) - pad_lng, max(all_lng) + pad_lng)
     ax.set_ylim(min(all_lat) - pad_lat, max(all_lat) + pad_lat)
@@ -181,18 +298,29 @@ def draw_map(targets, title="", width=7.0, height=5.0, dpi=150):
 def build_map_figure(agenda, caption=""):
     """collection_result.json 의 agenda 로 지도 HTML 조각을 만든다.
 
-    좌표가 없으면 빈 문자열을 돌려준다. 부르는 쪽에서 그대로 붙이면 된다.
+    agenda_lines.csv 에 두 점 이상이 있으면 구간도를,
+    없으면 지금까지처럼 위도·경도 한 쌍으로 위치도를 그린다.
+    둘 다 없으면 빈 문자열을 돌려준다. 부르는 쪽은 그대로 붙이면 된다.
     """
     if not agenda:
         return ""
-    pt = parse_point(agenda)
-    if not pt:
-        return ""
     name = (agenda.get("현안명") or "").strip() or "현안 위치"
-    uri = draw_map([(name, pt[0], pt[1])], title=name + " 위치")
+    aid = (agenda.get("id") or agenda.get("ID") or "")
+
+    seg, seg_label = load_line(aid)
+    if len(seg) >= 2:
+        uri = draw_map([], title=name + " 구간",
+                       line=seg, line_label=seg_label)
+        cap = caption or "{} 구간 개념도 (동탄권 주요 지점 대비)".format(name)
+    else:
+        pt = parse_point(agenda)
+        if not pt:
+            return ""
+        uri = draw_map([(name, pt[0], pt[1])], title=name + " 위치")
+        cap = caption or "{} 위치 개념도 (동탄권 주요 지점 대비)".format(name)
+
     if not uri:
         return ""
-    cap = caption or "{} 위치 개념도 (동탄권 주요 지점 대비)".format(name)
     return ('<figure style="margin:20px 0;text-align:center;">'
             '<img src="' + uri + '" width="560" '
             'style="width:560px;max-width:100%;border-radius:8px;" '
@@ -202,11 +330,24 @@ def build_map_figure(agenda, caption=""):
 
 
 if __name__ == "__main__":
+    # 점 하나
     uri = draw_map([("동탄 주택공급", 37.2100, 127.0730)],
                    title="동탄 주택공급 위치")
-    print("생성 결과:", "성공" if uri else "실패")
+    print("점 하나:", "성공" if uri else "실패")
     if uri:
         raw = base64.b64decode(uri.split(",", 1)[1])
         with open("map_sample.png", "wb") as f:
             f.write(raw)
-        print("map_sample.png 저장 ({:,}바이트)".format(len(raw)))
+        print("  map_sample.png 저장 ({:,}바이트)".format(len(raw)))
+
+    # 선
+    uri2 = draw_map([], title="용인 남사~화성 신동 연결도로 구간",
+                    line=[("동탄 신동(시점)", 37.1777, 127.1420),
+                          ("남사읍 완장리(종점)", 37.1525, 127.1736)],
+                    line_label="함봉산 관통 — 터널 포함 구간")
+    print("선:", "성공" if uri2 else "실패")
+    if uri2:
+        raw = base64.b64decode(uri2.split(",", 1)[1])
+        with open("map_line_sample.png", "wb") as f:
+            f.write(raw)
+        print("  map_line_sample.png 저장 ({:,}바이트)".format(len(raw)))
