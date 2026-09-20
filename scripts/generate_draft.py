@@ -200,6 +200,22 @@ def load_council_rows(days=35, limit=8):
     print("회의록 로드: {}건".format(len(rows[:limit])))
     return rows[:limit]
 
+def _eok(v):
+    """억원 단위 숫자를 사람이 읽는 꼴로."""
+    if v is None:
+        return "?"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "?"
+    if v < 0.005:
+        return "0"
+    if v >= 10000:
+        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
+    if v >= 1:
+        return "{:,.0f}억".format(v)
+    return "{:.2f}억".format(v)        
+    
 def build_agenda_material(result):
     """수집 단계가 고른 현안과 그 고시 연표를 초안 재료로 만든다.
 
@@ -257,7 +273,7 @@ def build_agenda_material(result):
     return "\n".join(lines)
     
     plans = a.get("관련계획") or []
-    if plans:
+        if plans:
         lines += [
             "",
             "■ 중기지방재정계획에 잡힌 예산 (단위: 억원)",
@@ -290,22 +306,6 @@ def build_agenda_material(result):
             "    범위나 시점이 달라서 생기는 차이일 수 있습니다.",
         ]
         
-def _eok(v):
-    """억원 단위 숫자를 사람이 읽는 꼴로."""
-    if v is None:
-        return "?"
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return "?"
-    if v < 0.005:
-        return "0"
-    if v >= 10000:
-        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
-    if v >= 1:
-        return "{:,.0f}억".format(v)
-    return "{:.2f}억".format(v)        
-    
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
