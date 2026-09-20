@@ -690,6 +690,17 @@ jobs:
                     "좌표 없으면 빈 문자열")
               check(make_map.build_map_figure(None) == "", "agenda 없으면 빈 문자열")
 
+              # 선형 현안 — data/agenda_lines.csv
+              for r in agrows:
+                  seg, lbl = make_map.load_line((r.get("id") or "").strip())
+                  if len(seg) < 2:
+                      continue
+                  print("      선형 {} {} — 지점 {}개 {}".format(
+                      r["id"], r["현안명"], len(seg), lbl))
+                  figl = make_map.build_map_figure(r)
+                  check(figl.startswith("<figure") and "구간" in figl,
+                        "{} 구간도 생성됨 ({:,}자)".format(r["id"], len(figl)))
+                        
               # 초안 삽입 경로
               md = "# 제목\n\n## 지금까지의 흐름\n\n내용\n"
               if withpt:
