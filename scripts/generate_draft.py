@@ -269,11 +269,9 @@ def build_agenda_material(result):
         lines.append("  이 글에는 현안 위치를 표시한 개념도가 자동으로 삽입됩니다.")
         lines.append("  위치를 글로 길게 설명하지 마세요. 어느 권역인지 한 줄이면 충분합니다.")
         lines.append("  개념도는 실제 축척이 아니므로 거리나 소요시간을 단정하지 마세요.")
-    lines.append("")
-    return "\n".join(lines)
-    
+
     plans = a.get("관련계획") or []
-        if plans:
+    if plans:
         lines += [
             "",
             "■ 중기지방재정계획에 잡힌 예산 (단위: 억원)",
@@ -305,7 +303,10 @@ def build_agenda_material(result):
             "    어느 쪽이 맞다고 단정하지 말고, 출처를 밝혀 나란히 두세요.",
             "    범위나 시점이 달라서 생기는 차이일 수 있습니다.",
         ]
-        
+
+    lines.append("")
+    return "\n".join(lines)        
+    
 def build_prompt(result, refs, today, plan=None, category="jisik"):
     plan = plan or {}
     rules = build_rules(category)
