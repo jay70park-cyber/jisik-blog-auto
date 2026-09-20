@@ -215,6 +215,7 @@ def parse_file(path):
         # 금액 — 아래로 내려가며 '계' 로 시작하는 줄.
         # 경기도는 대상·규모·내용·소관부처가 줄줄이 이어져 10줄을 넘기도 한다.
         amt = None
+        desc = [s]
         for j in range(i + 1, min(len(lines), i + 16)):
             t = lines[j].strip()
             if t.startswith("계 "):
@@ -224,7 +225,8 @@ def parse_file(path):
             # 다음 사업의 앵커를 만나면 이 블록은 금액이 없는 것
             if j > i + 1 and PERIOD.search(t):
                 break
-
+            if t and not FLAGS.match(t) and not money(t):
+                desc.append(t)
         if not name or not amt:
             continue
 
@@ -234,7 +236,7 @@ def parse_file(path):
             "계획기간": period,
             "단위": unit,
             "사업명": name[:60],
-            "사업개요": re.sub(r"\s+", " ", s)[:200],
+            "사업개요": re.sub(r"\s+", " ", " ".join(desc))[:200],
             "총사업비": amt[0], "기투자": amt[1],
             "향후": amt[2] + amt[8],   # 2026~2030 소계 + 2031 이후
             "이후": amt[8],            # 2031 이후만
