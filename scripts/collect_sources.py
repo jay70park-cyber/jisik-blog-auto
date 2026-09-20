@@ -34,10 +34,34 @@ def today_kst():
 
 
 # ── 월요일: 3개 순환 (독자 여정 순서) ──
+# 카테고리마다 6개씩 둔다. 3개였을 때는 무슨 규칙을 얹어도
+# 순환 아니면 고착, 둘 중 하나밖에 안 됐다.
+# 점수 상위 4개만 후보로 쓰므로 하위 2개는 점수가 올라야 들어온다.
 CATEGORIES = {
-    "개념_자격": ["동탄 지식산업센터 입주업종", "동탄 지식산업센터 조건", "동탄 지산 입주자격"],
-    "세금_정책": ["지식산업센터 취득세 감면", "동탄 지식산업센터 취득세", "지식산업센터 재산세"],
-    "물건_검증": ["동탄 지식산업센터 실거래가", "지식산업센터 등기부 확인", "동탄 지식산업센터 전용률"],
+    "개념_자격": [
+        "동탄 지식산업센터 입주업종",
+        "동탄 지식산업센터 조건",
+        "동탄 지산 입주자격",
+        "지식산업센터 지원시설",
+        "지식산업센터 설립 승인",
+        "비상주사무실 지식산업센터",
+    ],
+    "세금_정책": [
+        "지식산업센터 취득세 감면",
+        "동탄 지식산업센터 취득세",
+        "지식산업센터 재산세",
+        "지식산업센터 대출 한도",
+        "지식산업센터 부가세 환급",
+        "지식산업센터 양도세",
+    ],
+    "물건_검증": [
+        "동탄 지식산업센터 실거래가",
+        "지식산업센터 등기부 확인",
+        "동탄 지식산업센터 전용률",
+        "동탄 지식산업센터 매매",
+        "지식산업센터 분양권 전매",
+        "동탄 지식산업센터 시세",
+    ],
 }
 CATEGORY_NAMES = {
     "개념_자격": "개념·입주자격",
@@ -61,6 +85,10 @@ NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
 PLAN_CSV = os.path.join("data", "plan_projects.csv")
 STATE_DIR = "state"
 ROTATION_STATE_FILE = os.path.join(STATE_DIR, "rotation_index.txt")
+KEYWORD_HISTORY_FILE = os.path.join(STATE_DIR, "keyword_history.json")
+
+KEYWORD_POOL = 4        # 점수 상위 몇 개까지 후보로 볼 것인가 (품질 하한선)
+KEYWORD_COOLDOWN = 2    # 최근 몇 번 쓴 것을 뺄 것인가 (같은 카테고리 기준)
 AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
 
 FRESH_DAYS = 14        # 최근진전일이 이 안이면 '진전 있음'
@@ -531,24 +559,88 @@ def pick_track(today=None):
 # ─────────────────────────────────────────────
 
 def score_keywords(keywords, start, end):
+    """점수는 '관심도'가 아니라 '기회'를 잰다.
+
+    예전 공식은 블로그 건수가 많을수록 점수가 올라갔다. 그런데
+    블로그 글이 많다는 것은 경쟁이 심하다는 뜻이지 관심이 높다는 뜻이 아니다.
+    트렌드지수가 0으로 나오는 키워드가 많아(데이터랩이 검색량 부족 시 0 반환)
+    점수가 사실상 문서 수로만 결정됐고, 가장 포화된 키워드가 1위로 올라왔다.
+    경쟁 낮은 롱테일을 노린다는 전략과 정반대였다.
+
+    2026-09-21 실측이 그 증거다.
+        등기부 확인    블로그 40,417  카페  88,225   옛 점수 0.39  (1위)
+        전용률        블로그 11,484  카페 196,290   옛 점수 0.284
+        실거래가      블로그  4,663  카페 197,086   옛 점수 0.235 (꼴찌)
+
+    카페는 질문이 쌓이는 곳이고 블로그는 답이 쌓이는 곳이다.
+    그 비율이 높을수록 '묻는 사람은 많은데 답한 글은 적은' 자리다.
+    실거래가는 질문이 답의 42배인데 점수는 꼴찌였다.
+
+    트렌드는 0이 흔해서 주 신호로 못 쓴다. 있을 때만 가산한다.
+    """
     rows = []
     for kw in keywords:
+        blog = naver_search_total("blog", kw)
+        cafe = naver_search_total("cafearticle", kw)
         rows.append({
             "keyword": kw,
-            "blog": naver_search_total("blog", kw),
-            "cafe": naver_search_total("cafearticle", kw),
+            "blog": blog,
+            "cafe": cafe,
             "trend": naver_trend_ratio(kw, start, end),
+            "기회": round(cafe / max(blog, 1), 1),   # 질문 ÷ 답
         })
-    max_blog = max((r["blog"] for r in rows), default=0) or 1
-    max_cafe = max((r["cafe"] for r in rows), default=0) or 1
+    max_ratio = max((r["기회"] for r in rows), default=0) or 1
     max_trend = max((r["trend"] for r in rows), default=0) or 1
     for r in rows:
         r["score"] = round(
-            (r["trend"] / max_trend) * 0.5
-            + (r["blog"] / max_blog) * 0.3
-            + (r["cafe"] / max_cafe) * 0.2, 3)
+            (r["기회"] / max_ratio) * 0.6
+            + (r["trend"] / max_trend) * 0.4, 3)
     rows.sort(key=lambda x: x["score"], reverse=True)
     return rows
+
+
+def load_keyword_history():
+    if not os.path.exists(KEYWORD_HISTORY_FILE):
+        return {}
+    try:
+        with open(KEYWORD_HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception as e:
+        print("키워드 이력을 못 읽었습니다: {}".format(e))
+        return {}
+
+
+def remember_keyword(category, keyword, keep=8):
+    """카테고리별로 최근 쓴 키워드를 앞에서부터 쌓는다.
+
+    주 단위가 아니라 '그 카테고리를 몇 번 방문했는지'로 센다.
+    같은 카테고리가 3주에 한 번 오므로 주로 세면 쿨다운이 무의미해진다.
+    """
+    hist = load_keyword_history()
+    used = [k for k in hist.get(category, []) if k != keyword]
+    hist[category] = ([keyword] + used)[:keep]
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(KEYWORD_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(hist, f, ensure_ascii=False, indent=2)
+
+
+def pick_keyword(rows, category):
+    """점수 상위 풀에서 최근 쓴 것을 뺀 뒤 1위를 고른다.
+
+    풀(상위 4개)은 품질 하한선이다. 순환만 하면 기회가 없는 키워드도
+    차례가 되면 그대로 나간다.
+    쿨다운(최근 2회 제외)은 고착 방지다. 점수 1위만 보면 같은 키워드가
+    계속 뽑혀 소재가 굳는다 — 지역 트랙이 '동탄 서울'로 네 번 연속
+    나갔던 것이 그 예다.
+
+    반환  (고른 행, 후보 풀, 제외된 최근 목록)
+    """
+    pool = rows[:KEYWORD_POOL] or rows
+    recent = load_keyword_history().get(category, [])[:KEYWORD_COOLDOWN]
+    fresh = [r for r in pool if r["keyword"] not in recent]
+    if not fresh:          # 풀이 쿨다운보다 작으면 다 빠질 수 있다
+        fresh = pool
+    return fresh[0], pool, recent
 
 
 def main():
@@ -573,14 +665,19 @@ def main():
 
     rows = score_keywords(keywords, start.isoformat(), end.isoformat())
 
+    pick_note = ""
     if track == "local" and agenda is not None:
         # 현안명이 곧 소재다. 점수와 무관하게 고정한다.
         top_keyword = agenda["현안명"]
     else:
-        alive = [r for r in rows if r["trend"] > 0] or rows
-        top_keyword = alive[idx % len(alive)]["keyword"]
-        print("선정: {} (후보 {}개 중 {}번)".format(
-            top_keyword, len(alive), idx % len(alive) + 1))
+        chosen, pool, recent = pick_keyword(rows, category)
+        top_keyword = chosen["keyword"]
+        remember_keyword(category, top_keyword)
+        pick_note = "상위 {}개 중 선택 · 최근 {}개 제외".format(
+            len(pool), len(recent))
+        print("선정: {} ({})".format(top_keyword, pick_note))
+        if recent:
+            print("  최근 사용: " + ", ".join(recent))
 
     result = {
         "week_index": idx,
@@ -651,15 +748,29 @@ def main():
             lines += ["  " + s for s in skip_log]
         lines.append("")
 
-    for r in rows:
-        marker = "★ " if r["keyword"] == top_keyword else "- "
+    recent_kw = load_keyword_history().get(category, [])[:KEYWORD_COOLDOWN]
+    for i, r in enumerate(rows):
+        if r["keyword"] == top_keyword:
+            marker = "★ "
+        elif r["keyword"] in recent_kw:
+            marker = "· "          # 최근에 써서 이번엔 제외
+        elif i >= KEYWORD_POOL:
+            marker = "  "          # 점수가 낮아 후보 밖
+        else:
+            marker = "- "
         lines.append(
             marker + r["keyword"]
             + " | 블로그 " + str(r["blog"])
             + " | 카페 " + str(r["cafe"])
-            + " | 트렌드지수 " + str(r["trend"])
+            + " | 기회 " + str(r.get("기회", "-")) + "배"
+            + " | 트렌드 " + str(r["trend"])
             + " | 스코어 " + str(r["score"])
         )
+    lines += ["",
+              "기회 = 카페 ÷ 블로그 (질문이 답보다 몇 배 많은가)",
+              "★ 선정  · 최근 사용해 제외  (공백) 점수가 낮아 후보 밖"]
+    if pick_note:
+        lines.append(pick_note)
     lines += ["", "이번 주 대표 키워드: " + top_keyword]
 
     with open("telegram_message.txt", "w", encoding="utf-8") as f:
