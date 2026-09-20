@@ -210,7 +210,7 @@ def parse_file(path):
             parts.append(t)
             if len(parts) >= 3:
                 break
-        name = " ".join(reversed(parts)).strip()
+        name = "".join(reversed(parts)).strip()
 
         # 금액 — 아래로 내려가며 '계' 로 시작하는 줄.
         # 경기도는 대상·규모·내용·소관부처가 줄줄이 이어져 10줄을 넘기도 한다.
