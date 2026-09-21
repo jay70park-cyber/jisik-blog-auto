@@ -725,14 +725,16 @@ jobs:
           html_jisik = gd.render_naver_html(md, top_keyword="지식산업센터 취득세 감면",
                                             rows=None, track="jisik")
 
-          r1 = check("지식산업센터 관련 검색 데이터" not in html_local,
-                     "local 글에 '검색 데이터 1위' 문구 없음")
+          r1 = check("가장 많았습니다" not in html_local,
+                     "local 글에 '검색 1위' 주장 없음")
           r2 = check(fake_local["agenda"]["현안명"] in html_local, "local 도입에 현안명 들어감")
           r3 = check("회의록" in html_council, "council 도입 문구 적용됨")
-          r4 = check("지식산업센터 관련 검색 데이터" not in html_council,
-                     "council 글에 '검색 데이터 1위' 문구 없음")
-          r5 = check("지식산업센터 관련 검색 데이터" in html_jisik, "지산 글은 기존 문구 유지")
-
+          r4 = check("가장 많았습니다" not in html_council,
+                     "council 글에 '검색 1위' 주장 없음")
+          r5 = check("지식산업센터 취득세 감면" in html_jisik,
+                     "지산 도입 문구에 이번 주제가 들어감")
+          check("가장 많았습니다" not in html_jisik,
+                "지산 글도 '검색 1위' 주장 안 함 — 소재는 순환으로 고른다")
           if not (r2 and r3 and r5):
               print("\n      ── 진단: 도입 문구가 삽입되지 않았습니다 ──")
               print("\n      [실제 출력 — local]")
