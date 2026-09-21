@@ -56,6 +56,16 @@ FIELDS = ["schSn", "회수", "차수", "회의명", "회의일",
 # 사람이 손으로 적는 열. 다시 수집해도 덮어쓰면 안 된다.
 MANUAL_FIELDS = ["글감"]
 
+# 현안에 안 걸려도 이 말이 나오면 요약한다.
+# '동탄'은 지명이라 변별력이 없고, '지방채'·'유찰'은 예산 심의철에
+# 전 위원회가 입에 올려 역시 넓다. 사안을 특정하는 말만 둔다.
+#
+# 회의록 특집은 현안과 무관하게 회기 전체를 훑는 글인데,
+# 현안 적중만으로 거르면 입구에서 이미 좁아진다.
+# 2026-09 실측: 23건 중 요약이 5건뿐이었고 전부 트램 관련 회의였다.
+# 9/7 도시건설위(동탄·산업단지·지방채)가 그렇게 빠졌다.
+DEV_WORDS = ["지식산업센터", "산업단지", "지구단위계획", "용도변경", "역세권"]
+
 MAX_EXCERPT = 3      # 회의록 하나에서 보낼 발췌 수
 CONTEXT = 120        # 적중어 앞뒤로 잘라낼 글자 수
 
@@ -427,6 +437,16 @@ def main():
     fresh = [m for m in meetings if m["schSn"] not in seen]
     print("새 회의록 {}건".format(len(fresh)))
 
+    # 요약 조건을 넓힌 뒤, 예전에 건너뛴 회의를 한 번 다시 본다.
+    # 요약이 채워지거나 '없음'으로 판정되면 다음 실행부터 대상에서 빠지므로
+    # 매일 되풀이되지 않는다.
+    again = [m for m in meetings
+             if m["schSn"] in seen
+             and not (seen[m["schSn"]].get("요약") or "").strip()]
+    if again:
+        print("요약이 비어 있어 다시 보는 회의 {}건".format(len(again)))
+    fresh = fresh + again
+
     blocks = []
     for m in fresh:
         body = fetch(m["링크"])
@@ -438,21 +458,26 @@ def main():
         m["현안"] = ", ".join(issues)
         m["적중어"] = ", ".join(words)
         m["수집일"] = today
+        prev = seen.get(m["schSn"]) or {}
         for c in MANUAL_FIELDS:
-            m.setdefault(c, "")
+            m.setdefault(c, prev.get(c, ""))   # 다시 봐도 글감을 지우지 않는다
         seen[m["schSn"]] = m
 
         mark = "◆" if issues else ("★" if words else "·")
         print("  {} {} {} | 적중 {}".format(
             mark, m["회의일"], m["회의명"], m["적중어"] or "없음"))
         if not words:
+            m["요약"] = "없음"
             continue
 
-        if not issues:
-            # 현안이 하나도 안 걸린 회의록은 요약하지 않는다.
+        if not issues and not any(w in words for w in DEV_WORDS):
+            # 현안에도 개발 관련 단어에도 안 걸린 회의록은 요약하지 않는다.
             # '동탄' 같은 지명만으로 걸린 농정·복지 회의록에
             # 요약 비용을 쓸 이유가 없다.
-            print("     · 현안 미적중, 요약 생략")
+            # '없음'을 남기는 이유: 안 남기면 다음 실행에서 또 받아온다.
+            # 나중에 조건을 더 넓히려면 이 칸을 비우면 다시 대상이 된다.
+            print("     · 현안·개발어 미적중, 요약 생략")
+            m["요약"] = "없음"
             continue
 
         result = summarize(text, agenda)
