@@ -18,6 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import make_map
 from content_rules import build_rules
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
@@ -70,12 +71,18 @@ def is_approval(text):
 
 
 def load_collection_context():
-    """generate_draft.py가 저장해둔 카테고리/키워드/표 데이터를 불러온다 (없으면 None들)."""
+    """generate_draft.py 가 저장해둔 수집 맥락을 불러온다 (없으면 None들).
+
+    트랙과 현안까지 함께 돌려준다. 이것이 없으면 수정본에서
+    도입 문구가 지산용으로 바뀌고 지역 현안 글의 지도가 사라진다.
+    """
     if not os.path.exists(COLLECTION_FILE):
-        return None, None, None
+        return None, None, None, "jisik", None
     with open(COLLECTION_FILE, "r", encoding="utf-8") as f:
         result = json.load(f)
-    return result.get("category_display"), result.get("top_keyword"), result.get("rows")
+    return (result.get("category_display"), result.get("top_keyword"),
+            result.get("rows"), result.get("track", "jisik"),
+            result.get("agenda"))
 
 
 def read_last_update_id():
@@ -322,7 +329,9 @@ def _inline_styles(html):
     return html
 
 
-def render_naver_html(markdown_text, title="블로그 초안", category_display=None, top_keyword=None, rows=None, table_position="top"):
+def render_naver_html(markdown_text, title="블로그 초안", category_display=None,
+                      top_keyword=None, rows=None, table_position="top",
+                      track="jisik", agenda=None):                    
     """마크다운을 네이버 블로그 붙여넣기에 적합한, 인라인 스타일 기반 HTML로 변환한다."""
     # [이미지: 설명] 표시를 실제 그래프/사진으로 치환 (실패 시 안내 박스로 대체)
     prepped = render_images(markdown_text, rows)
@@ -360,19 +369,62 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
     intro_html = ""
     if top_keyword:
         table_html = build_score_table_html(rows) if rows else ""
-        if table_position == "bottom":
-            # 관심도 표는 독자 의사결정에 직접 쓰이지 않으므로 글 맨 아래로 보낸다
+        if table_position == "none":
+            # 키워드 관심도 표는 내부 수집 데이터다. 독자에게 보여줄 것이 아니라
+            # 본문에서 뺀다. 표가 필요하면 텔레그램 메시지에서 본다.
+            table_html = ""
+        elif table_position == "bottom":
             body_html = body_html + table_html
             table_html = ""
         intro_style = "background:#F5F6FA;border-radius:10px;padding:16px 18px;color:#444;font-size:19px;line-height:1.7;"
         strong_style = "color:#1F3C88;font-weight:700;"
-        intro_html = (
-            '<p style="' + intro_style + '">최근 지식산업센터 관련 검색 데이터를 살펴보니, '
-            '<strong style="' + strong_style + '">' + top_keyword + '</strong>을(를) 찾아보는 분들이 가장 많았습니다.<br>'
-            "그래서 이번 글에서는 이 주제를 중심으로, 실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다.</p>"
-            + table_html
-        )
+        
+        if track == "council":
+            intro_body = (
+                "화성특례시의회 회의록을 최근 한 달치 훑어 정리했습니다.<br>"
+                "공식 보도자료에는 나오지 않던 내용을 중심으로 추렸습니다."
+            )
+        elif track == "local" and agenda:
+            intro_body = (
+                "동탄에서 계속 지켜보고 있는 지역 현안 가운데 "
+                '<strong style="' + strong_style + '">' + agenda.get("현안명", "") + "</strong> "
+                "소식을 정리했습니다.<br>"
+                "지금 어디까지 왔고 무엇이 아직 정해지지 않았는지 짚어봤습니다."
+            )
+        else:
+            # 소재는 검색 1위가 아니라 카테고리 순환과 쿨다운으로 고른다.
+            # "가장 많았습니다"는 사실이 아니다.
+            intro_body = (
+                "이번 글에서는 "
+                '<strong style="' + strong_style + '">' + top_keyword + "</strong> "
+                "주제를 다룹니다.<br>"
+                "실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다."
+            )
+        intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
         body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
+
+    # 지역 현안 글에는 위치 개념도를 붙인다.
+    # 독자가 가장 먼저 궁금해하는 것이 "그게 어디냐" 이기 때문이다.
+    # 좌표가 없으면 아무것도 붙지 않는다.
+    if track == "local" and agenda:
+        try:
+            map_html = make_map.build_map_figure(agenda)
+        except Exception as e:
+            print("지도 생성 실패(본문에는 영향 없음): " + repr(e))
+            map_html = ""
+        if map_html:
+            # '지금까지의 흐름' 소제목 앞에 둔다. 흐름을 읽기 전에
+            # 위치를 먼저 보여주는 편이 이해가 빠르다.
+            anchor = "지금까지의 흐름"
+            idx = body_html.find(anchor)
+            if idx > 0:
+                cut = body_html.rfind("<div", 0, idx)
+                if cut > 0:
+                    body_html = body_html[:cut] + map_html + body_html[cut:]
+                else:
+                    body_html += map_html
+            else:
+                body_html += map_html
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -457,7 +509,7 @@ def call_claude_revise(previous_draft, instruction, timeout=400, category="jisik
 - 가독성: 한 문단은 최대 3~4줄로 끊고, 나열되는 정보(조건·비율·체크항목)는 반드시 불릿(-)으로 정리하며, 각 섹션의 핵심 결론 문장은 볼드 처리할 것
 - 쉬운 언어: 전문 용어·업계 은어는 첫 등장 시 괄호로 쉬운 설명을 병기하고(예: 무피(프리미엄 없이 분양가에 되파는 매물), LTV(집값 대비 대출 한도 비율)), 어려운 개념은 일상 비유로 한 번 풀어줄 것
 - 실행 가능성: "임장하세요", "전문가와 상담하세요" 같은 추상적 조언 금지. 확인할 항목·질문 문장·조회 사이트명처럼 바로 실행 가능한 형태의 체크리스트를 포함할 것
-- 숫자 예시: 수익률·세금·대출을 다룰 경우 구체적 금액을 넣은 계산 예시를 최소 1개 포함할 것
+- 숫자 예시: 가정한 금액으로 계산 예시를 만들지 말 것. 금리·월세·보증금·관리비를 임의로 정해 "5년에 얼마" 같은 계산을 하지 말 것. 계산은 주어진 데이터에 실제로 있는 숫자로만 하고, 독자가 자기 숫자를 넣어야 하는 계산은 계산기 링크로 넘길 것
 - 출처 신뢰도: 근거 링크는 국가법령정보센터·국세청·지자체·통계청·언론 등 공식 출처를 사용하고, 나무위키·위키백과·개인 블로그는 근거로 쓰지 말 것
 - 표 서식: 숫자 열은 마크다운 우측 정렬(`---:`)을 쓰고, 숫자 앞에 한 칸 공백을 넣으며, 소수점 자릿수를 열 전체에서 통일해 소수점 위치가 세로로 맞도록 할 것. 천 단위는 쉼표 표기
 - 포지셔닝: 글쓴이는 향후 지식산업센터 전문 중개사로 개업 예정이므로, 현장 감각이 묻어나는 서술과 타이밍의 중요성을 은근하게 녹여 독자가 잠재 고객이 되도록 유도하되, "문의 주세요"·"상담 환영"·특정 매물 추천·상담 유도 문장 같은 노골적 영업 표현은 절대 쓰지 말 것. 마무리는 정보 요약으로 끝낼 것
@@ -524,8 +576,11 @@ def main():
             with open(DRAFT_FILE, "r", encoding="utf-8") as f:
                 final_md = f.read()
 
-            cat, kw, rows = load_collection_context()
-            final_html = render_naver_html(final_md, title="최종 발행본", category_display=cat, top_keyword=kw, rows=rows, table_position="bottom")
+            cat, kw, rows, track, agenda = load_collection_context()
+            final_html = render_naver_html(
+                final_md, title="최종 발행본", category_display=cat,
+                top_keyword=kw, rows=rows, table_position="none",
+                track=track, agenda=agenda)
             final_path = os.path.join(STATE_DIR, "final_post.html")
             with open(final_path, "w", encoding="utf-8") as f:
                 f.write(final_html)
@@ -549,7 +604,9 @@ def main():
         else:
             with open(DRAFT_FILE, "r", encoding="utf-8") as f:
                 previous_draft = f.read()
-            revised = call_claude_revise(previous_draft, text)
+            _, _, _, track, _ = load_collection_context()
+            # 트랙을 안 넘기면 지역·회의록 글이 지산 규칙으로 다시 쓰인다.
+            revised = call_claude_revise(previous_draft, text, category=track)
             if not revised or not revised.strip():
                 send_telegram_message("수정본 생성에 실패했습니다(빈 응답). 다시 한 번 요청해주세요.")
                 return
@@ -558,8 +615,11 @@ def main():
             mark_count = revised.count("<mark>")
             revised_html_path = os.path.join(STATE_DIR, "draft.html")
             with open(revised_html_path, "w", encoding="utf-8") as f:
-                cat, kw, rows = load_collection_context()
-                f.write(render_naver_html(revised, title="수정된 초안", category_display=cat, top_keyword=kw, rows=rows, table_position="bottom"))
+                cat, kw, rows, track, agenda = load_collection_context()
+                f.write(render_naver_html(
+                    revised, title="수정된 초안", category_display=cat,
+                    top_keyword=kw, rows=rows, table_position="none",
+                    track=track, agenda=agenda))
             send_telegram_document(
                 revised_html_path,
                 "[수정된 초안] 요청하신 내용을 반영했습니다. 노란 하이라이트 " + str(mark_count) + "곳 확인해주세요.\n"

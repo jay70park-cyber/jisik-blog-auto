@@ -357,14 +357,18 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
         tab_url = calc_url if calc_url.endswith("/") else calc_url + "/"
         tab_url += "?tab=" + urllib.parse.quote(calc_tab)
 
+        # 예전에는 "내 경우 계산해보기"를 별도 섹션으로 강제했다.
+        # 그러면 모델이 금리·월세·보증금을 지어내 5년 비용을 계산하고,
+        # 그 위에 "매수가 임차보다 6,500만원 더 든다" 같은 결론까지 세웠다.
+        # 근거 없는 숫자였다. 섹션을 없애고 링크 한 줄로 줄인다.
         calc_block = f"""
-6. **"내 경우 계산해보기" 섹션 (필수)**: 독자가 자기 숫자를 넣어볼 수 있도록 계산기를 안내하세요.
-   - 계산기 주소: {tab_url}
-   - 이 주소는 '{calc_tab}' 탭이 바로 열리는 링크입니다. 주소를 고치거나 줄이지 마세요.
-   - 마크다운 링크로 넣으세요. 예: [{calc_tab} 계산기에서 내 숫자로 확인하기]({tab_url})
-   - 링크 뒤에 "의 OO 탭에" 같은 말을 덧붙이지 마세요. 링크만으로 해당 탭이 열립니다.
-   - 링크 앞에 어떤 값을 넣으면 무엇을 알 수 있는지 한 줄로 안내하세요.
-   - 계산기 결과는 참고용이며 실제 조건은 다를 수 있다는 점을 한 문장으로 덧붙이세요."""
+   - 이 섹션 끝에 계산기 링크를 **한 줄만** 덧붙이세요. 별도 섹션을 만들지 마세요.
+     [{calc_tab} 계산기에서 내 숫자로 확인하기]({tab_url})
+   - 링크 앞에 어떤 값을 넣으면 무엇이 나오는지 한 줄로 안내하세요.
+   - **가정한 금액으로 계산 예시를 만들지 마세요.** 금리·월세·보증금·관리비를
+     임의로 정해 "5년에 얼마" 같은 계산을 하지 마세요. 독자 조건과 다릅니다.
+   - 링크 뒤에 "의 OO 탭에" 같은 말을 덧붙이지 마세요. 링크만으로 탭이 열립니다.
+   - 계산기 결과는 참고용이라는 점을 한 문장으로 덧붙이세요."""
 
     realprice_block = ""
     if realprice:
@@ -470,7 +474,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
 10. ## 이 데이터에 대하여
    - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
-   - (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙습니다. 표를 직접 만들지 마세요.)"""
+   - 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
 
     elif category == "realprice":
         structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
@@ -504,7 +508,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
 7. ## 직접 확인하는 법
    - 국토교통부 실거래가 공개시스템에서 같은 데이터를 조회하는 방법을 단계로 알려주세요.
-   - 지역 선택(화성시 동탄구), 유형 선택, 기간 설정까지 구체적으로 쓰세요.
+   - 지역 선택(화성시), 유형 선택, 기간 설정까지 구체적으로 쓰세요.
+   - '화성시 동탄구'처럼 없는 행정구역을 쓰지 마세요. 동탄은 구가 아닙니다.
    - 독자가 우리 숫자를 검증할 수 있게 하는 것이 목적입니다.
 
 8. ## 더 읽어보기
@@ -512,7 +517,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 
 9. ## 이 데이터에 대하여
    - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
-   - (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙입니다. 표를 직접 만들지 마세요.)"""
+   - 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
 
     elif is_info:
         # 지역 개발·시의회 트랙. 구조는 content_rules.py 에 있다.
@@ -556,7 +561,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - {refs_rule}
 
 9. ## 이 주제를 고른 이유
-   - 이 주제를 다루게 된 배경을 2~3문장으로 짧게 씁니다. (관심도 데이터 표는 시스템이 이 섹션 아래에 자동으로 붙입니다. 표를 직접 만들지 마세요.)"""
+   - 이 주제를 다루게 된 배경을 2~3문장으로 짧게 씁니다. 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
 
     prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
 오늘 날짜는 {today} 입니다.
@@ -886,8 +891,11 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
     intro_html = ""
     if top_keyword:
         table_html = build_score_table_html(rows) if rows else ""
-        if table_position == "bottom":
-            # 관심도 표는 독자 의사결정에 직접 쓰이지 않으므로 글 맨 아래로 보낸다
+        if table_position == "none":
+            # 키워드 관심도 표는 내부 수집 데이터다. 독자에게 보여줄 것이 아니라
+            # 본문에서 뺀다. 표가 필요하면 텔레그램 메시지에서 본다.
+            table_html = ""
+        elif table_position == "bottom":
             body_html = body_html + table_html
             table_html = ""
         intro_style = "background:#F5F6FA;border-radius:10px;padding:16px 18px;color:#444;font-size:19px;line-height:1.7;"
@@ -906,12 +914,13 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
                 "지금 어디까지 왔고 무엇이 아직 정해지지 않았는지 짚어봤습니다."
             )
         else:
+            # 소재는 검색 1위가 아니라 카테고리 순환과 쿨다운으로 고른다.
+            # "가장 많았습니다"는 사실이 아니다.
             intro_body = (
-                "최근 지식산업센터 관련 검색 데이터를 살펴보니, "
-                '<strong style="' + strong_style + '">' + top_keyword + "</strong>을(를) "
-                "찾아보는 분들이 가장 많았습니다.<br>"
-                "그래서 이번 글에서는 이 주제를 중심으로, 실제로 확인해야 할 부분과 "
-                "놓치기 쉬운 고려사항을 정리해 봤습니다."
+                "이번 글에서는 "
+                '<strong style="' + strong_style + '">' + top_keyword + "</strong> "
+                "주제를 다룹니다.<br>"
+                "실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다."
             )
         intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
         body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
@@ -1116,7 +1125,7 @@ def main():
         category_display=result["category_display"],
         top_keyword=result["top_keyword"],
         rows=result["rows"],
-        table_position="bottom",
+        table_position="none",
         track=track,
         agenda=result.get("agenda"),
     )
