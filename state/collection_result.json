@@ -1,34 +1,37 @@
 {
-  "week_index": 2,
-  "track": "jisik",
-  "category": "물건_검증",
-  "category_display": "물건 검증",
+  "week_index": 4,
+  "track": "council",
+  "category": "시의회특집",
+  "category_display": "시의회 회의록 특집",
   "period": {
-    "start": "2026-08-24",
-    "end": "2026-09-21"
+    "start": "2026-08-27",
+    "end": "2026-09-24"
   },
   "rows": [
     {
-      "keyword": "지식산업센터 등기부 확인",
-      "blog": 40417,
-      "cafe": 88225,
-      "trend": 0.0,
-      "score": 0.39
+      "keyword": "화성시 예산",
+      "blog": 331449,
+      "cafe": 190878,
+      "trend": 100.0,
+      "기회": 0.6,
+      "score": 1.0
     },
     {
-      "keyword": "동탄 지식산업센터 전용률",
-      "blog": 11484,
-      "cafe": 196290,
+      "keyword": "동탄 개발 현안",
+      "blog": 4473,
+      "cafe": 2533,
       "trend": 0.0,
-      "score": 0.284
+      "기회": 0.6,
+      "score": 0.6
     },
     {
-      "keyword": "동탄 지식산업센터 실거래가",
-      "blog": 4663,
-      "cafe": 197086,
-      "trend": 0.0,
-      "score": 0.235
+      "keyword": "화성시의회",
+      "blog": 68806,
+      "cafe": 16650,
+      "trend": 18.11254,
+      "기회": 0.2,
+      "score": 0.272
     }
   ],
-  "top_keyword": "동탄 지식산업센터 실거래가"
+  "top_keyword": "화성시 예산"
 }
