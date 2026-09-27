@@ -1,37 +1,61 @@
 {
-  "week_index": 4,
-  "track": "council",
-  "category": "시의회특집",
-  "category_display": "시의회 회의록 특집",
+  "week_index": 0,
+  "track": "jisik",
+  "category": "개념_자격",
+  "category_display": "개념·입주자격",
   "period": {
-    "start": "2026-08-27",
-    "end": "2026-09-24"
+    "start": "2026-08-31",
+    "end": "2026-09-28"
   },
   "rows": [
     {
-      "keyword": "화성시 예산",
-      "blog": 331449,
-      "cafe": 190878,
-      "trend": 100.0,
-      "기회": 0.6,
-      "score": 1.0
-    },
-    {
-      "keyword": "동탄 개발 현안",
-      "blog": 4473,
-      "cafe": 2533,
+      "keyword": "동탄 지산 입주자격",
+      "blog": 1344,
+      "cafe": 198172,
       "trend": 0.0,
-      "기회": 0.6,
+      "기회": 147.4,
       "score": 0.6
     },
     {
-      "keyword": "화성시의회",
-      "blog": 68806,
-      "cafe": 16650,
-      "trend": 18.11254,
-      "기회": 0.2,
-      "score": 0.272
+      "keyword": "지식산업센터 지원시설",
+      "blog": 296558,
+      "cafe": 281872,
+      "trend": 100.0,
+      "기회": 1.0,
+      "score": 0.404
+    },
+    {
+      "keyword": "동탄 지식산업센터 조건",
+      "blog": 24354,
+      "cafe": 198586,
+      "trend": 0.0,
+      "기회": 8.2,
+      "score": 0.033
+    },
+    {
+      "keyword": "동탄 지식산업센터 입주업종",
+      "blog": 12515,
+      "cafe": 22612,
+      "trend": 0.0,
+      "기회": 1.8,
+      "score": 0.007
+    },
+    {
+      "keyword": "비상주사무실 지식산업센터",
+      "blog": 3429,
+      "cafe": 3035,
+      "trend": 0.0,
+      "기회": 0.9,
+      "score": 0.004
+    },
+    {
+      "keyword": "지식산업센터 설립 승인",
+      "blog": 32489,
+      "cafe": 23632,
+      "trend": 0.0,
+      "기회": 0.7,
+      "score": 0.003
     }
   ],
-  "top_keyword": "화성시 예산"
+  "top_keyword": "동탄 지산 입주자격"
 }
