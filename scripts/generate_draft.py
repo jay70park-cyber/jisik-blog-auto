@@ -625,6 +625,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 영어 키워드는 지역명 없이 보편적인 장면으로 쓰세요. 스톡사진 사이트에서 검색되는 말이어야 합니다.
   좋은 예: modern office interior / industrial building exterior / business meeting
   나쁜 예: dongtan technovalley (한국 지역명은 스톡사진에 없습니다)
+한글 설명은 **사진에 실제로 담길 만한 일반적인 장면**으로 쓰세요.
+스톡 사진이라 특정 기관·장소·행사와 일치하지 않습니다.
+"화성시의회 예산결산특별위원회 회의 장면"처럼 쓰면 없는 사실을 만드는 것입니다.
+"회의실 내부", "서류와 계산기"처럼 쓰세요.
 독립된 문단으로 배치하고, 관심도 수치를 그래프로 만들지 마세요.
 
 **중복 금지**: 같은 사실·수치를 여러 섹션에서 표현만 바꿔 반복하지 마세요. 각 섹션은 새로운 내용을 더해야 합니다.
@@ -1107,8 +1111,10 @@ def main():
     else:
         print("기획안 파일이 없어 기본 구조로 진행합니다.")
 
-    refs = fetch_reference_links(result["top_keyword"])
     track = result.get("track", "jisik")
+    # 회의록 특집의 근거는 회의록이지 남의 블로그가 아니다.
+    # 키워드로 네이버 블로그를 뒤지면 장례식장 화환 광고까지 딸려온다.
+    refs = [] if track == "council" else fetch_reference_links(result["top_keyword"])
     print("트랙: " + track)
     prompt = build_prompt(result, refs, today, plan=plan, category=track)
 

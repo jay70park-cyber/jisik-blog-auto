@@ -535,6 +535,11 @@ def pick_track(today=None):
     if today is None:
         today = today_kst()
 
+    # 수동 시험용. 마지막 목요일을 기다리지 않고 회의록 특집을 돌려본다.
+    # 월요일 분기보다 앞에 둬야 순환 카운터가 안 움직인다.
+    if os.environ.get("COUNCIL_READY") == "1":
+        return "council", "시의회특집", "시의회 회의록 특집", COUNCIL_KEYWORDS, 0
+
     if today.weekday() == 0:                      # 월요일
         idx = next_rotation_index()
         key = ROTATION[idx]
