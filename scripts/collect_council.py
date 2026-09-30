@@ -51,10 +51,20 @@ EXTRA_WORDS = [
 ]
 
 FIELDS = ["schSn", "회수", "차수", "회의명", "회의일",
-          "현안", "적중어", "요약", "글감", "링크", "수집일"]
+          "현안", "적중어", "요약", "글감", "링크", "수집일",
+          "알림일", "요약시도"]
 
 # 사람이 손으로 적는 열. 다시 수집해도 덮어쓰면 안 된다.
 MANUAL_FIELDS = ["글감"]
+
+# 실행 사이에 이어받아야 하는 열. 안 이어받으면 시도 횟수가
+# 매번 0으로 돌아가 한도가 무의미해진다.
+CARRY_FIELDS = ["알림일", "요약시도"]
+
+# 요약을 몇 번까지 다시 해볼 것인가.
+# API 타임아웃 같은 일시적 실패는 다시 해볼 만하지만,
+# 한도가 없으면 실패한 회의록이 매일 같은 발췌로 날아온다.
+SUMMARY_RETRY = 2
 
 # 현안에 안 걸려도 이 말이 나오면 요약한다.
 # '동탄'은 지명이라 변별력이 없고, '지방채'·'유찰'은 예산 심의철에
@@ -67,7 +77,9 @@ MANUAL_FIELDS = ["글감"]
 DEV_WORDS = ["지식산업센터", "산업단지", "지구단위계획", "용도변경", "역세권"]
 
 MAX_EXCERPT = 3      # 회의록 하나에서 보낼 발췌 수
-CONTEXT = 120        # 적중어 앞뒤로 잘라낼 글자 수
+CONTEXT = 190        # 적중어 앞뒤로 잘라낼 글자 수
+                     # 120 자로는 발언자 표시('○ 홍길동 위원')가
+                     # 앞쪽에 안 들어와 누가 하는 말인지 알 수 없었다
 
 
 def fetch(url, timeout=40, retries=3):
@@ -220,7 +232,26 @@ def excerpts(text, words):
             break
 
     picked.sort(key=lambda c: c[1])
-    return ["…" + text[a:b].strip() + "…" for _, a, b in picked]
+    return ["…" + trim_excerpt(text[a:b]) + "…" for _, a, b in picked]
+
+
+def trim_excerpt(s):
+    """발췌의 앞뒤를 읽을 수 있는 지점에 맞춘다.
+
+    적중어 앞뒤를 글자 수로만 자르면 '조성과장 최호범 청사 이전이요?'
+    처럼 발언자 이름 중간에서 시작한다. 누가 하는 말인지 모르니
+    맥락을 잡을 수 없다. '○' 가 발언 시작 표시이므로 거기에 맞춘다.
+    """
+    s = s.strip()
+    i = s.find("○")
+    if 0 < i <= 220:               # 너무 뒤에 있으면 알맹이가 다 날아간다
+        s = s[i:].strip()
+    last = None
+    for m in re.finditer(r"[.?!]\s", s):
+        last = m
+    if last and last.end() > len(s) * 0.55:
+        s = s[:last.end()].strip()   # 문장 중간에서 끊기지 않게
+    return s
 
 
 SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
@@ -287,13 +318,17 @@ confident 는 그 단계 판단이 확실할 때만 true.
 """
 
 
-def summarize(text, agenda, timeout=120):
+def summarize(text, agenda, timeout=180, retries=2):
     """회의록을 요약하고 현안별 진전을 뽑는다.
 
     회의록은 발언이 오가는 형식이라 발췌로는 한계가 뚜렷하다.
     그리고 예산 심의 회의록은 모든 과가 돌아가며 설명하기 때문에,
     그냥 요약하라고 하면 골고루 훑다가 정작 길게 다툰 대목을 놓친다.
     그래서 현안 목록을 같이 넘기고 우선순위를 못 박는다.
+
+    실패하면 한 번 더 해본다. 과부하나 타임아웃 같은 일시적 실패가
+    곧바로 발췌 알림으로 떨어지면 읽을 수 없는 조각이 사람에게 간다.
+    회의록 하나에 한 번 더 묻는 값이 그보다 싸다.
 
     돌려주는 값
       None        요약 실패. 발췌로 대신한다
@@ -307,31 +342,44 @@ def summarize(text, agenda, timeout=120):
     prompt = SUMMARY_PROMPT.format(agenda=listing) + text[:150000]
     body = json.dumps({
         "model": SUMMARY_MODEL,
-        "max_tokens": 1200,
+        # 1200 으로는 한국어 요약 7줄에 updates JSON 까지 담기지 않아
+        # 응답이 중간에 끊겼고, 미완성 JSON 이 파싱에서 터져
+        # 요약이 조용히 실패하고 있었다.
+        "max_tokens": 3000,
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages", data=body, headers={
-            "content-type": "application/json",
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-        })
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            data = json.loads(res.read().decode("utf-8"))
-        out = "".join(b.get("text", "") for b in data.get("content", [])
-                      if b.get("type") == "text").strip()
-        out = re.sub(r"^```(?:json)?|```$", "", out, flags=re.M).strip()
-        m = re.search(r"\{.*\}", out, re.S)
-        parsed = json.loads(m.group(0) if m else out)
-        summary = [str(x).strip() for x in parsed.get("summary", [])
-                   if str(x).strip()]
-        updates = [u for u in parsed.get("updates", [])
-                   if isinstance(u, dict) and u.get("issue")]
-        return summary, updates
-    except Exception as e:
-        print("    요약 실패: {}".format(e))
-        return None
+
+    for attempt in range(1, retries + 1):
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages", data=body, headers={
+                "content-type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+            })
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                data = json.loads(res.read().decode("utf-8"))
+            if data.get("stop_reason") == "max_tokens":
+                # 끊긴 JSON 은 아래에서 어차피 터지지만, 그러면 원인이
+                # 'Expecting value' 로만 남아 무엇을 고쳐야 할지 모른다.
+                # 다시 물어도 같은 곳에서 끊기므로 바로 포기한다.
+                print("    요약 실패: 응답이 max_tokens 에서 끊겼습니다")
+                return None
+            out = "".join(b.get("text", "") for b in data.get("content", [])
+                          if b.get("type") == "text").strip()
+            out = re.sub(r"^```(?:json)?|```$", "", out, flags=re.M).strip()
+            m = re.search(r"\{.*\}", out, re.S)
+            parsed = json.loads(m.group(0) if m else out)
+            summary = [str(x).strip() for x in parsed.get("summary", [])
+                       if str(x).strip()]
+            updates = [u for u in parsed.get("updates", [])
+                       if isinstance(u, dict) and u.get("issue")]
+            return summary, updates
+        except Exception as e:
+            print("    요약 실패({}/{}): {}".format(attempt, retries, e))
+            if attempt < retries:
+                time.sleep(5 * attempt)
+    return None
 
 
 def apply_updates(updates, meeting, text="", agenda=None):
@@ -402,6 +450,40 @@ def load_existing():
         return {r["schSn"]: r for r in csv.DictReader(f)}
 
 
+def pick_again(meetings, seen):
+    """이미 받아둔 회의록 중 다시 볼 것을 고른다.
+
+    요약 조건을 넓힌 뒤 예전에 건너뛴 회의를 다시 보려고 만든 경로다.
+    그런데 예전에는 '요약 칸이 비었는가' 하나만 봤고, 요약 실패 분기가
+    그 칸을 채우지 않고 넘어갔다. 그래서 요약이 실패한 회의록은
+    영원히 이 목록에 남아 **매일 같은 발췌를 보냈다.**
+
+    지금은 세 가지를 함께 본다.
+      · 요약이 이미 있나          → 볼 일 없다
+      · 알린 적 있나              → 요약은 못 했어도 이미 보냈다
+      · 시도 한도를 넘겼나        → 될 요약이 아니다
+
+    조건을 더 넓혀 다시 훑고 싶으면 CSV 의 알림일·요약시도 칸을 지운다.
+    """
+    again = []
+    for m in meetings:
+        prev = seen.get(m["schSn"])
+        if not prev:
+            continue                       # 새 회의록은 fresh 가 맡는다
+        if (prev.get("요약") or "").strip():
+            continue
+        if (prev.get("알림일") or "").strip():
+            continue
+        try:
+            tries = int(prev.get("요약시도") or 0)
+        except (TypeError, ValueError):
+            tries = 0
+        if tries >= SUMMARY_RETRY:
+            continue
+        again.append(m)
+    return again
+
+
 def send_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("(텔레그램 설정이 없어 전송을 건너뜁니다)")
@@ -442,12 +524,7 @@ def main():
     fresh = [m for m in meetings if m["schSn"] not in seen]
     print("새 회의록 {}건".format(len(fresh)))
 
-    # 요약 조건을 넓힌 뒤, 예전에 건너뛴 회의를 한 번 다시 본다.
-    # 요약이 채워지거나 '없음'으로 판정되면 다음 실행부터 대상에서 빠지므로
-    # 매일 되풀이되지 않는다.
-    again = [m for m in meetings
-             if m["schSn"] in seen
-             and not (seen[m["schSn"]].get("요약") or "").strip()]
+    again = pick_again(meetings, seen)
     if again:
         print("요약이 비어 있어 다시 보는 회의 {}건".format(len(again)))
     fresh = fresh + again
@@ -464,7 +541,7 @@ def main():
         m["적중어"] = ", ".join(words)
         m["수집일"] = today
         prev = seen.get(m["schSn"]) or {}
-        for c in MANUAL_FIELDS:
+        for c in MANUAL_FIELDS + CARRY_FIELDS:
             m.setdefault(c, prev.get(c, ""))   # 다시 봐도 글감을 지우지 않는다
         seen[m["schSn"]] = m
 
@@ -487,7 +564,23 @@ def main():
 
         result = summarize(text, agenda)
         if result is None:
-            # 요약이 실패하면 예전처럼 발췌를 보낸다. 알림을 거르지는 않는다.
+            # 요약이 실패하면 발췌를 보낸다. 알림을 거르지는 않는다.
+            #
+            # 다만 '처리했다'는 표시를 남겨야 한다. 예전에는 이 분기가
+            # 요약 칸을 비운 채 넘어가서, 같은 회의록이 다음 실행에서
+            # 또 걸리고 같은 발췌가 매일 날아왔다.
+            try:
+                tries = int(m.get("요약시도") or 0) + 1
+            except ValueError:
+                tries = 1
+            m["요약시도"] = str(tries)
+            m["알림일"] = today
+            if tries >= SUMMARY_RETRY:
+                m["요약"] = "없음(요약 실패 {}회)".format(tries)
+                print("     · 요약 {}회 실패, 더 시도하지 않습니다".format(tries))
+            else:
+                print("     · 요약 실패 {}회, 다음 실행에서 한 번 더 시도합니다"
+                      .format(tries))
             lines = ["{} {} {} {}".format(
                 mark, m["회의일"], m["회의명"], m["차수"])]
             if issues:
@@ -504,6 +597,7 @@ def main():
             continue
 
         m["요약"] = " / ".join(summary)[:600]
+        m["알림일"] = today
         changed = apply_updates(updates, m, text, agenda)
         for name, stage, note in changed:
             print("     → 현안 갱신: {} ({}) {}".format(name, stage, note))
