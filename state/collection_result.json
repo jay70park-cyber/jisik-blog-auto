@@ -1,37 +1,37 @@
 {
-  "week_index": 0,
-  "track": "council",
-  "category": "시의회특집",
-  "category_display": "시의회 회의록 특집",
+  "week_index": 1,
+  "track": "realprice",
+  "category": "실거래분석",
+  "category_display": "실거래가 분석",
   "period": {
-    "start": "2026-08-31",
-    "end": "2026-09-28"
+    "start": "2026-09-03",
+    "end": "2026-10-01"
   },
   "rows": [
     {
-      "keyword": "화성시 예산",
-      "blog": 332563,
-      "cafe": 191290,
+      "keyword": "동탄 지식산업센터 매매",
+      "blog": 35342,
+      "cafe": 321503,
       "trend": 100.0,
-      "기회": 0.6,
-      "score": 1.0
+      "기회": 9.1,
+      "score": 0.851
     },
     {
-      "keyword": "동탄 개발 현안",
-      "blog": 4498,
-      "cafe": 2536,
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 17511,
+      "cafe": 211815,
       "trend": 0.0,
-      "기회": 0.6,
+      "기회": 12.1,
       "score": 0.6
     },
     {
-      "keyword": "화성시의회",
-      "blog": 69007,
-      "cafe": 16674,
-      "trend": 31.0082,
-      "기회": 0.2,
-      "score": 0.324
+      "keyword": "동탄 상가 시세",
+      "blog": 59604,
+      "cafe": 232911,
+      "trend": 0.0,
+      "기회": 3.9,
+      "score": 0.193
     }
   ],
-  "top_keyword": "동탄 개발 현안"
+  "top_keyword": "동탄 지식산업센터 매매"
 }
