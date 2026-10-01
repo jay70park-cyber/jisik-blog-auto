@@ -26,6 +26,7 @@ import html
 import time
 import datetime
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -254,6 +255,61 @@ def trim_excerpt(s):
     return s
 
 
+# 요약에 넘길 입력 길이.
+# 1차는 전문, 2차는 줄여서 본다. 2026-10-01 까지 9/15 예산결산특위
+# 제4차의 요약이 계속 실패했는데, 재시도가 같은 길이로 다시 묻고 있어
+# 길이가 원인이면 두 번 다 같은 자리에서 막혔다.
+SUMMARY_INPUT_LIMIT = 150000
+SUMMARY_RETRY_LIMIT = 60000
+SUMMARY_WINDOW = 4000      # 적중어 하나당 남길 폭
+SUMMARY_TAIL = 8000        # 회의 끝. 의결 결과가 여기 있다
+
+
+def shrink_for_summary(text, words, limit):
+    """요약 입력을 limit 안으로 줄인다.
+
+    앞에서 그냥 자르면 회의 끝이 날아간다. 가결·부결과 시정요구사항은
+    회의 마지막에 나오므로, 그것을 잃으면 '회의는 어떻게 끝났나'를
+    쓸 수 없게 된다.
+
+    그래서 적중 구간 주변을 점수 높은 것부터 모으고, 회의 마지막
+    SUMMARY_TAIL 자를 반드시 붙인다.
+    """
+    if len(text) <= limit:
+        return text
+
+    tail = text[-SUMMARY_TAIL:]
+    budget = limit - len(tail) - 200          # 중략 표시 여유
+    if budget <= 0:
+        return text[:limit]
+    if not words:
+        # 적중어가 없으면 앞뒤만 남긴다
+        return text[:budget] + "\n…(중략)…\n" + tail
+
+    spans = []
+    for w in words:
+        for m in re.finditer(re.escape(w), text):
+            a = max(0, m.start() - SUMMARY_WINDOW // 2)
+            b = min(len(text), m.end() + SUMMARY_WINDOW // 2)
+            spans.append((score(text[a:b], words), a, b))
+    spans.sort(key=lambda s: -s[0])
+
+    picked, used = [], 0
+    for _, a, b in spans:
+        if any(a < pb and pa < b for pa, pb in picked):
+            continue                           # 이미 고른 구간과 겹친다
+        if used + (b - a) > budget:
+            continue
+        picked.append((a, b))
+        used += b - a
+    if not picked:
+        return text[:budget] + "\n…(중략)…\n" + tail
+
+    picked.sort()
+    parts = [text[a:b] for a, b in picked]
+    return "\n…(중략)…\n".join(parts) + "\n…(중략)…\n" + tail
+
+
 SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
 동탄 부동산·지역개발 블로그를 쓰는 사람에게 보낼 요약을 만들어라.
 
@@ -318,7 +374,7 @@ confident 는 그 단계 판단이 확실할 때만 true.
 """
 
 
-def summarize(text, agenda, timeout=180, retries=2):
+def summarize(text, agenda, words=None, timeout=180, retries=2):
     """회의록을 요약하고 현안별 진전을 뽑는다.
 
     회의록은 발언이 오가는 형식이라 발췌로는 한계가 뚜렷하다.
@@ -339,17 +395,23 @@ def summarize(text, agenda, timeout=180, retries=2):
         return None
     listing = "\n".join("- {} (현재 단계: {})".format(n, st or "모름")
                         for n, _, st in agenda) or "- (없음)"
-    prompt = SUMMARY_PROMPT.format(agenda=listing) + text[:150000]
-    body = json.dumps({
-        "model": SUMMARY_MODEL,
-        # 1200 으로는 한국어 요약 7줄에 updates JSON 까지 담기지 않아
-        # 응답이 중간에 끊겼고, 미완성 JSON 이 파싱에서 터져
-        # 요약이 조용히 실패하고 있었다.
-        "max_tokens": 3000,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
 
     for attempt in range(1, retries + 1):
+        # 2차에는 입력을 줄인다. 길이가 원인이면 같은 길이로 다시 물어도
+        # 같은 자리에서 막히고, 길이가 아니었다면 줄여도 손해가 없다.
+        limit = SUMMARY_INPUT_LIMIT if attempt == 1 else SUMMARY_RETRY_LIMIT
+        body_text = shrink_for_summary(text, words or [], limit)
+        prompt = SUMMARY_PROMPT.format(agenda=listing) + body_text
+        print("    요약 시도 {}/{} — 회의록 {:,}자 중 {:,}자 넘김".format(
+            attempt, retries, len(text), len(body_text)))
+        body = json.dumps({
+            "model": SUMMARY_MODEL,
+            # 1200 으로는 한국어 요약 7줄에 updates JSON 까지 담기지 않아
+            # 응답이 중간에 끊겼고, 미완성 JSON 이 파싱에서 터져
+            # 요약이 조용히 실패하고 있었다.
+            "max_tokens": 3000,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode("utf-8")
         req = urllib.request.Request(
             "https://api.anthropic.com/v1/messages", data=body, headers={
                 "content-type": "application/json",
@@ -375,8 +437,21 @@ def summarize(text, agenda, timeout=180, retries=2):
             updates = [u for u in parsed.get("updates", [])
                        if isinstance(u, dict) and u.get("issue")]
             return summary, updates
+        except urllib.error.HTTPError as e:
+            # 본문을 읽지 않으면 "HTTP Error 400: Bad Request" 만 남아
+            # 길이 초과인지 형식 오류인지 가릴 수 없다.
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                pass
+            print("    요약 실패({}/{}) HTTP {}: {}".format(
+                attempt, retries, e.code, detail))
+            if attempt < retries:
+                time.sleep(5 * attempt)
         except Exception as e:
-            print("    요약 실패({}/{}): {}".format(attempt, retries, e))
+            print("    요약 실패({}/{}): {} ({})".format(
+                attempt, retries, e, type(e).__name__))
             if attempt < retries:
                 time.sleep(5 * attempt)
     return None
@@ -562,7 +637,7 @@ def main():
             m["요약"] = "없음"
             continue
 
-        result = summarize(text, agenda)
+        result = summarize(text, agenda, words)
         if result is None:
             # 요약이 실패하면 발췌를 보낸다. 알림을 거르지는 않는다.
             #
