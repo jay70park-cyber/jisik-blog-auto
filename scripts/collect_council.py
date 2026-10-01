@@ -336,8 +336,16 @@ SUMMARY_PROMPT = """다음은 화성특례시의회 회의록 전문이다.
 5. 지역 산업. 기업 유치, 투자, 산업단지 조성, 산업 지원 예산
 6. 안건이 어떻게 처리됐는지. 가결·부결·수정가결·보류, 부대의견
 
-담지 않는 것: 복지, 환경미화, 폐기물, 청소, 문화·체육 행사,
+# 담지 않는 것 — 위 우선순위보다 이 배제가 먼저다
+복지·보육·보건, 환경미화, 폐기물, 청소, 문화·체육 행사,
 인사말, 절차 진행, 일반 행정.
+
+**위 우선순위에 해당하더라도 이 분야면 담지 마라.**
+예를 들어 육아휴직 장려금이 전액 삭감된 것은 우선순위 2번의 '감액'이지만,
+이 글의 독자(동탄에서 사업장을 찾는 사람)와 아무 관계가 없다.
+산후조리비 지원 일몰도 마찬가지다. 감액·삭감이라는 말에 끌려가지 마라.
+
+배제하고 나서 남는 것이 두 줄뿐이면 두 줄만 쓴다. 빈 배열도 좋다.
 
 한 과의 예산 항목을 골고루 훑지 마라. 중요한 하나를 깊게 담는 편이
 여러 개를 얕게 담는 것보다 낫다.
@@ -449,6 +457,18 @@ def summarize(text, agenda, words=None, timeout=180, retries=2):
                 return None
             out = "".join(b.get("text", "") for b in data.get("content", [])
                           if b.get("type") == "text").strip()
+            if not out:
+                # 200 으로 오고도 텍스트 블록이 비어 있는 경우가 있다.
+                # 그냥 두면 아래 파싱이 'Expecting value: line 1 column 1'
+                # 로만 터져 무엇이 비었는지 알 수 없다.
+                print("    요약 실패({}/{}): 응답에 텍스트가 없습니다 "
+                      "(stop_reason={}, 블록={})".format(
+                          attempt, retries, data.get("stop_reason"),
+                          [b.get("type") for b in data.get("content", [])]))
+                if attempt < retries:
+                    time.sleep(3)
+                    continue
+                return None
             out = re.sub(r"^```(?:json)?|```$", "", out, flags=re.M).strip()
             m = re.search(r"\{.*\}", out, re.S)
             parsed = json.loads(m.group(0) if m else out)
