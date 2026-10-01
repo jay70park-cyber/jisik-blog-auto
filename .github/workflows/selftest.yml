@@ -149,9 +149,13 @@ jobs:
               print("      (가운데 칸은 그 줄의 들여쓰기 칸 수입니다)\n")
 
 
+          # 2026-10-01: verify_draft·collect_council·date_guard·check_and_publish 가
+          # 이 목록에 없어서, 그 넷에 문법 오류가 있어도 "모두 통과"가 나왔다.
+          # 스크립트를 새로 만들면 여기에도 넣어야 한다.
           for name in ["content_rules", "collect_sources", "generate_plan",
                        "generate_draft", "make_map", "review_agenda",
-                       "index_plans"]:
+                       "index_plans", "date_guard", "verify_draft",
+                       "collect_council", "check_and_publish"]:
               try:
                   importlib.import_module(name)
                   check(True, name)
@@ -421,6 +425,9 @@ jobs:
 
           # ─────────────────────────────────────────────
           section("6. 초안 프롬프트 — 정보 트랙 격리")
+          # 주의: 이 절의 검사 상당수가 프롬프트 문구를 그대로 찾는다.
+          # 글 구조나 지시문을 고치면 여기도 함께 고쳐야 한다.
+          # 안 고치면 멀쩡한 개선이 '실패'로 찍히고, 반복되면 실패에 둔감해진다.
           # ─────────────────────────────────────────────
           today = cs.today_kst().isoformat()
           plan_local = {
@@ -446,7 +453,13 @@ jobs:
           p_council = gd.build_prompt(fake_council, [], today, plan=plan_local, category="council")
           check("국토교통부 실거래가 공개시스템(직접 집계)" not in p_council,
                 "council 프롬프트에 실거래 블록 없음")
-          check("이번 회기에 다뤄진 것" in p_council, "council 전용 구조 적용됨")
+          # 2026-09-28 구조 재편으로 "이번 회기에 다뤄진 것" 섹션이 사라졌는데
+          # 이 검사가 그 문구를 못 박고 있어 10-01 까지 실패한 채였다.
+          # 문구 하나에 걸면 글을 고칠 때마다 검사가 깨진다.
+          # 재편의 취지(배경 → 질의응답 → 결론)를 담은 뼈대 셋을 본다.
+          check(all(w in p_council for w in
+                    ("이건 무슨 회의인가", "의원이 묻고", "회의는 어떻게 끝났나")),
+                "council 전용 구조 적용됨")
           check("#화성시의회" in p_council, "council 해시태그 적용됨")
 
           p_jisik = gd.build_prompt(
@@ -762,6 +775,48 @@ jobs:
               print("      (가운데 칸은 들여쓰기 칸 수입니다)\n")
 
 
+          # ─────────────────────────────────────────────
+          section("8. 날짜 검사와 초안 검증기")
+          # ─────────────────────────────────────────────
+          import date_guard as dgd
+          import verify_draft as vd
+          
+          TD = datetime.date(2026, 9, 10)
+          
+          # 날짜는 프로세스 시간대와 무관하게 KST 여야 한다.
+          # GitHub Actions 는 UTC 로 돌아 KST 오전이 전날로 나왔고,
+          # 2026-10-01 검증 리포트가 그날 쓴 초안을 하루 어긋났다고 잘못 짚었다.
+          check(dgd.today_kst() == datetime.datetime.now(
+                    datetime.timezone(datetime.timedelta(hours=9))).date(),
+                "today_kst 가 KST 를 돌려줌 ({})".format(dgd.today_kst()))
+          
+          check(dgd.check_dates("착공은 2026년 8월을 목표로 한다.",
+                                today=TD)[0][1] == "실패",
+                "지난 날짜 + 미래형 → 실패")
+          check(dgd.check_dates("2024년 3월 수서역 구간이 먼저 열렸다.",
+                                today=TD)[0][1] == "통과",
+                "과거 서술 → 통과")
+          check(dgd.check_recency("오늘(2026-09-10) 기준 1년 넘게 거래가 없다.",
+                                  None, today=TD)[0][1] == "통과",
+                "'오늘(날짜) 기준' 은 신선도 주장이 아님")
+          check(dgd.check_recency("최근 공사비가 늘었다고 알려졌다.",
+                                  None, today=TD)[0][1] == "확인 필요",
+                "진짜 신선도 표현은 잡힘")
+          
+          vp = vd.build_verify_prompt(
+              {"reader": "임대수익 목적 투자자", "output_type": "③ 거래량 해석",
+               "conclusion": "거래량을 먼저 본다", "criteria": ["기준1"]},
+              "초안 본문")
+          check("[판단 기준 - 반드시 지킬 것]" in vp,
+                "검증 프롬프트에 판단 기준 규칙 실림")
+          check("11. 판단 기준의 타당성" in vp,
+                "기획안과의 일치가 아니라 기준 자체를 보는 항목 있음")
+          # 요구 항목 수와 JSON 출력 자리가 어긋나면 뒤쪽 검사가 조용히 사라진다.
+          # 실제로 9·10번이 자리 없이 지시만 있어 판정되지 않았다.
+          check(vp.count('"name"') == 11,
+                "JSON 출력 자리 {}개 — 요구 항목 11개와 일치".format(vp.count('"name"')))
+          
+          
           # ─────────────────────────────────────────────
           section("결과")
           # ─────────────────────────────────────────────
