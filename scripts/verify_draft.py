@@ -24,15 +24,15 @@ import urllib.parse
 # date.today() 가 하루 전을 돌려준다. 2026-10-01 리포트가 그 날짜의
 # 초안을 "기준일 09-30 과 어긋난다"고 틀리게 지적한 원인이 이것이다.
 #
-# 시간대를 여기서 고정하면 date_guard 를 포함해 이 프로세스의 모든
-# 모듈이 같은 날짜를 본다. 모듈마다 today_kst() 를 심는 것보다 낫다.
-# 반드시 날짜를 읽는 모듈을 import 하기 전에 해야 한다.
+# 이 줄은 날짜를 쓰는 다른 라이브러리까지 덮는 안전망이다.
+# 다만 setdefault 는 TZ 가 이미 있으면 덮지 않으므로 이것만 믿을 수 없다.
+# 이 스크립트가 쓰는 날짜는 아래 today_kst() 로 직접 가져온다.
 os.environ.setdefault("TZ", "Asia/Seoul")
 if hasattr(time, "tzset"):
     time.tzset()
 
 from datetime import date
-from date_guard import check_dates, check_recency
+from date_guard import check_dates, check_recency, today_kst
 import content_rules as cr
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
@@ -136,7 +136,7 @@ def source_dates():
     except Exception:
         return None
 
-    today = date.today()
+    today = today_kst()
     # 미래 날짜나 10년 이전은 잘못 잡힌 값으로 본다
     out = [d for d in out if (today - d).days >= 0 and (today - d).days < 3650]
     return out or None
@@ -206,7 +206,7 @@ def check_mechanical(draft, plan):
     else:
         out.append(("표", "통과", "있음"))
 
-    out.extend(check_dates(draft))
+    out.extend(check_dates(draft, today=today_kst()))
 
     # 외부 기사를 근거로 쓰지 않은 글에는 신선도 판정이 성립하지 않는다.
     # 예전에는 날짜를 모를 때도 "근거 기사가 일주일 이내인지 확인하세요"를
@@ -322,7 +322,7 @@ def build_verify_prompt(plan, draft):
   "worst": "가장 시급하게 고쳐야 할 것 한 문장. 문제가 없으면 빈 문자열",
   "fix_request": "수정 요청으로 그대로 보낼 수 있는 문장. 문제가 없으면 빈 문자열"
 }}""".format(
-        today=date.today().strftime("%Y년 %m월 %d일"),   # ← 추가
+        today=today_kst().strftime("%Y년 %m월 %d일"),
         reader=plan.get("reader", "-"),
         output=plan.get("output_type", "-"),
         conclusion=plan.get("conclusion", "-"),

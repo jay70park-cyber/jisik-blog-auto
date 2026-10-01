@@ -18,7 +18,18 @@ date_guard.py — 지나간 날짜를 미래형으로 쓴 문장을 잡는다.
 """
 
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+
+# 이 저장소의 모든 날짜 기준은 한국 시간이다.
+# GitHub Actions 는 UTC 로 돌기 때문에 date.today() 를 그대로 쓰면
+# KST 오전이 전날로 나온다. 2026-10-01 검증 리포트가 그날 쓴 초안을
+# "기준일 09-30 과 어긋난다"고 틀리게 지적한 것이 그 때문이었다.
+# 부르는 쪽이 시간대를 맞춰 두었는지에 기대지 않고 여기서 정한다.
+KST = timezone(timedelta(hours=9))
+
+
+def today_kst():
+    return datetime.now(KST).date()
 
 # 미래를 가리키는 표지. 이 말이 같은 문장에 있는데
 # 날짜가 이미 지났으면 문장이 상한 것이다.
@@ -190,7 +201,7 @@ def _clip(sent, limit=70):
 
 def check_dates(draft, today=None):
     """(name, verdict, note) 목록을 돌려준다. verify_draft.py 규약과 같다."""
-    today = today or date.today()
+    today = today or today_kst()
     stale, soon = [], []
 
     for raw in _split_sentences(draft):
@@ -245,6 +256,100 @@ def check_dates(draft, today=None):
 
 
 # ─────────────────────────────────────────────
+# 기사 나이에 따른 톤 검사
+#
+# 넉 달 전 기사를 "최근"이라고 쓰면 그것도 오류다.
+# 근거 기사가 오래됐는데 신선도를 주장하는 표현이 있으면 잡는다.
+# ─────────────────────────────────────────────
+
+# 새 소식임을 주장하는 표현. 기사가 오래됐으면 쓰면 안 된다.
+RECENCY_WORDS = [
+    "최근", "요즘", "근래", "이번 주", "금주", "지난주", "이번 달", "이달 들어",
+    "오늘", "어제", "그제", "엊그제", "방금", "막 나온", "갓 나온",
+    "속보", "새롭게 확인", "새로 나온", "새롭게 드러난", "밝혀졌다",
+    "알려졌다", "전해졌다", "나왔다는 소식",
+]
+
+FRESH_DAYS = 7          # 이 안쪽이면 새 소식으로 다뤄도 된다
+
+# '최근'은 기간·상태를 가리키는 용법이 더 흔하다.
+# '최근 1년 상승률', '최근 공실 기간'은 기사 신선도 주장이 아니다.
+# 이런 말이 바로 뒤에 붙으면 신선도 표현으로 세지 않는다.
+_PERIOD_AFTER = (
+    r"\s*(\d+\s*(년|개월|달|주|일|분기|회|건|차)"
+    # 한자 수사도 받는다 ('석 달', '두 달', '서너 해')
+    r"|(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|석|넉|서너|두세)\s*(달|해|주|날)"
+    r"|[1-9]\d*년간|수년|몇\s*년"
+    # 앞에 한두 글자가 더 붙어도 인식한다 ('실거래', '월임대료' 등)
+    r"|[가-힣]{0,2}(공실|거래|시세|실적|추세|흐름|동향|임대료|매매가"
+    r"|낙찰|계약|입주|분양|기준|자료|데이터|통계|수치|가격))"
+)
+
+
+# '오늘(2026-10-01) 기준' 처럼 바로 뒤에 날짜가 붙으면 기준일 표기다.
+# 글이 스스로 어느 시점에서 쓰였는지 밝히는 것이지 새 소식 주장이 아니다.
+# _PERIOD_AFTER 가 '오늘 기준' 은 면제하면서 '오늘(2026-...' 을 놓쳤다.
+# 괄호가 끼어 바로 뒤 글자 검사에 걸리지 않았기 때문이다.
+_ASOF_AFTER = r"\s*[(\[]?\s*(20\d{2}|\d{1,2}\s*월\s*\d{1,2}\s*일|\d{1,2}\s*월)"
+
+
+def check_recency(draft, source_dates=None, today=None):
+    """근거 기사의 나이와 본문의 신선도 표현이 맞는지 본다.
+
+    source_dates : 근거로 쓴 기사들의 발행일 목록 (datetime.date).
+                   수집 단계에서 pubDate 를 넘겨주면 정확해진다.
+                   없으면 신선도 표현이 있는지만 알려준다.
+    """
+    today = today or today_kst()
+    hits = []
+    for raw in _split_sentences(draft):
+        sent = _strip_quotes(raw)
+        # 독자가 확인할 항목을 안내하는 줄은 기사 신선도 주장이 아니다
+        if re.match(r"^[-*•]?\s*(확인|확인할 것|확인 방법|질문|체크)", sent):
+            continue
+        for w in RECENCY_WORDS:
+            if w not in sent:
+                continue
+            # '최근 1년', '최근 공실'처럼 기간·대상을 수식하는 용법은 제외
+            if re.search(re.escape(w) + _PERIOD_AFTER, sent):
+                continue
+            # '오늘(2026-10-01) 기준'처럼 기준일을 밝히는 용법도 제외
+            if re.search(re.escape(w) + _ASOF_AFTER, sent):
+                continue
+            hits.append((w, raw))
+            break
+
+    if not hits:
+        return [("기사 나이", "통과", "신선도 표현 없음 — 사실관계 서술")]
+
+    if not source_dates:
+        note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:3])
+        return [("기사 나이", "확인 필요",
+                 "신선도 표현 {}곳 — 근거 기사가 일주일 이내인지 확인하세요: {}"
+                 .format(len(hits), note))]
+
+    newest, oldest = max(source_dates), min(source_dates)
+    age = (today - newest).days
+    if age <= FRESH_DAYS:
+        spread = (newest - oldest).days
+        if spread > 30:
+            note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:2])
+            return [("기사 나이", "주의",
+                     "가장 새 근거는 {}일 전이지만 근거가 {}일에 걸쳐 있습니다. "
+                     "신선도 표현 {}곳이 오래된 사실을 가리키지 않는지 "
+                     "확인하세요: {}".format(age, spread, len(hits), note))]
+        return [("기사 나이", "통과",
+                 "가장 새 근거가 {}일 전 — 새 소식 톤 허용".format(age))]
+
+    note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:3])
+    if len(hits) > 3:
+        note += " 외 {}건".format(len(hits) - 3)
+    return [("기사 나이", "실패",
+             "가장 새 근거가 {}일 전인데 신선도 표현이 있습니다 "
+             "— 사실관계 서술로 바꾸세요: {}".format(age, note))]
+
+
+# ─────────────────────────────────────────────
 if __name__ == "__main__":
     TODAY = date(2026, 9, 10)
 
@@ -293,86 +398,36 @@ if __name__ == "__main__":
     for name, verdict, note in check_dates(sample, today=TODAY):
         print("  [{}] {} — {}".format(verdict, name, note))
 
+    print("\n─── 기사 나이 검사 ───")
+    # check_recency 는 그동안 __main__ 블록보다 아래에 정의돼 있어
+    # 이 테스트가 한 번도 돌지 않았다. 2026-10-01 리포트에서
+    # '오늘(2026-10-01) 기준' 이 신선도 주장으로 잡힌 뒤에야 드러났다.
+    rcases = [
+        # 기준일 표기 — 신선도 주장이 아니다
+        ("이 단지의 최근 거래월은 2025-04로, 오늘(2026-10-01) 기준 "
+         "1년 넘게 신규 거래가 확인되지 않는다.", "통과"),
+        ("오늘 2026년 10월 1일 기준으로 집계했다.", "통과"),
+        ("최근 1년 거래량은 237건이다.", "통과"),
+        ("최근 공실 기간을 확인한다.", "통과"),
+        # 진짜 신선도 주장
+        ("최근 트램 공사비가 크게 늘었다고 알려졌다.", "확인 필요"),
+        ("이번 주 새로 나온 자료다.", "확인 필요"),
+    ]
+    rok = 0
+    for text, expect in rcases:
+        got = check_recency(text, None, today=TODAY)[0][1]
+        mark = "○" if got == expect else "×"
+        if got == expect:
+            rok += 1
+        print("{} 기대={} 결과={}  {}".format(mark, expect, got, text[:44]))
+    print("\n{}/{} 통과".format(rok, len(rcases)))
 
-# ─────────────────────────────────────────────
-# 기사 나이에 따른 톤 검사
-#
-# 넉 달 전 기사를 "최근"이라고 쓰면 그것도 오류다.
-# 근거 기사가 오래됐는데 신선도를 주장하는 표현이 있으면 잡는다.
-# ─────────────────────────────────────────────
+    # 근거 날짜가 있을 때
+    print("\n─── 근거 날짜를 넘겼을 때 ───")
+    fresh = [date(2026, 9, 8), date(2026, 9, 9)]
+    old = [date(2026, 5, 1)]
+    for label, srcs in [("일주일 이내", fresh), ("넉 달 전", old)]:
+        n, v, note = check_recency("최근 트램 공사비가 늘었다고 알려졌다.",
+                                   srcs, today=TODAY)[0]
+        print("  [{}] {} — {}".format(v, label, note[:70]))
 
-# 새 소식임을 주장하는 표현. 기사가 오래됐으면 쓰면 안 된다.
-RECENCY_WORDS = [
-    "최근", "요즘", "근래", "이번 주", "금주", "지난주", "이번 달", "이달 들어",
-    "오늘", "어제", "그제", "엊그제", "방금", "막 나온", "갓 나온",
-    "속보", "새롭게 확인", "새로 나온", "새롭게 드러난", "밝혀졌다",
-    "알려졌다", "전해졌다", "나왔다는 소식",
-]
-
-FRESH_DAYS = 7          # 이 안쪽이면 새 소식으로 다뤄도 된다
-
-# '최근'은 기간·상태를 가리키는 용법이 더 흔하다.
-# '최근 1년 상승률', '최근 공실 기간'은 기사 신선도 주장이 아니다.
-# 이런 말이 바로 뒤에 붙으면 신선도 표현으로 세지 않는다.
-_PERIOD_AFTER = (
-    r"\s*(\d+\s*(년|개월|달|주|일|분기|회|건|차)"
-    # 한자 수사도 받는다 ('석 달', '두 달', '서너 해')
-    r"|(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|석|넉|서너|두세)\s*(달|해|주|날)"
-    r"|[1-9]\d*년간|수년|몇\s*년"
-    # 앞에 한두 글자가 더 붙어도 인식한다 ('실거래', '월임대료' 등)
-    r"|[가-힣]{0,2}(공실|거래|시세|실적|추세|흐름|동향|임대료|매매가"
-    r"|낙찰|계약|입주|분양|기준|자료|데이터|통계|수치|가격))"
-)
-
-
-def check_recency(draft, source_dates=None, today=None):
-    """근거 기사의 나이와 본문의 신선도 표현이 맞는지 본다.
-
-    source_dates : 근거로 쓴 기사들의 발행일 목록 (datetime.date).
-                   수집 단계에서 pubDate 를 넘겨주면 정확해진다.
-                   없으면 신선도 표현이 있는지만 알려준다.
-    """
-    today = today or date.today()
-    hits = []
-    for raw in _split_sentences(draft):
-        sent = _strip_quotes(raw)
-        # 독자가 확인할 항목을 안내하는 줄은 기사 신선도 주장이 아니다
-        if re.match(r"^[-*•]?\s*(확인|확인할 것|확인 방법|질문|체크)", sent):
-            continue
-        for w in RECENCY_WORDS:
-            if w not in sent:
-                continue
-            # '최근 1년', '최근 공실'처럼 기간·대상을 수식하는 용법은 제외
-            if re.search(re.escape(w) + _PERIOD_AFTER, sent):
-                continue
-            hits.append((w, raw))
-            break
-
-    if not hits:
-        return [("기사 나이", "통과", "신선도 표현 없음 — 사실관계 서술")]
-
-    if not source_dates:
-        note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:3])
-        return [("기사 나이", "확인 필요",
-                 "신선도 표현 {}곳 — 근거 기사가 일주일 이내인지 확인하세요: {}"
-                 .format(len(hits), note))]
-
-    newest, oldest = max(source_dates), min(source_dates)
-    age = (today - newest).days
-    if age <= FRESH_DAYS:
-        spread = (newest - oldest).days
-        if spread > 30:
-            note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:2])
-            return [("기사 나이", "주의",
-                     "가장 새 근거는 {}일 전이지만 근거가 {}일에 걸쳐 있습니다. "
-                     "신선도 표현 {}곳이 오래된 사실을 가리키지 않는지 "
-                     "확인하세요: {}".format(age, spread, len(hits), note))]
-        return [("기사 나이", "통과",
-                 "가장 새 근거가 {}일 전 — 새 소식 톤 허용".format(age))]
-
-    note = "; ".join("'{}' → {}".format(w, _clip(s)) for w, s in hits[:3])
-    if len(hits) > 3:
-        note += " 외 {}건".format(len(hits) - 3)
-    return [("기사 나이", "실패",
-             "가장 새 근거가 {}일 전인데 신선도 표현이 있습니다 "
-             "— 사실관계 서술로 바꾸세요: {}".format(age, note))]
