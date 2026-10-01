@@ -15,11 +15,25 @@
 """
 import os
 import re
+import time
 import json
 import urllib.request
 import urllib.parse
-from datetime import date            # ← 추가
-from date_guard import check_dates, check_recency   # ← 추가
+
+# GitHub Actions 는 UTC 로 돈다. KST 오전은 UTC 로 전날이어서
+# date.today() 가 하루 전을 돌려준다. 2026-10-01 리포트가 그 날짜의
+# 초안을 "기준일 09-30 과 어긋난다"고 틀리게 지적한 원인이 이것이다.
+#
+# 시간대를 여기서 고정하면 date_guard 를 포함해 이 프로세스의 모든
+# 모듈이 같은 날짜를 본다. 모듈마다 today_kst() 를 심는 것보다 낫다.
+# 반드시 날짜를 읽는 모듈을 import 하기 전에 해야 한다.
+os.environ.setdefault("TZ", "Asia/Seoul")
+if hasattr(time, "tzset"):
+    time.tzset()
+
+from datetime import date
+from date_guard import check_dates, check_recency
+import content_rules as cr
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -164,7 +178,14 @@ def check_mechanical(draft, plan):
     has_link = "jisik-calc" in draft
     if calc_tab and calc_tab != "없음":
         if has_link:
-            out.append(("계산기 링크", "통과", calc_tab + " 탭"))
+            # 링크가 있는지만 보면 기획안이 '임대수익률' 탭인데 본문이
+            # '실투자금' 탭을 걸어도 통과한다. 탭 이름이 본문에 있는지 본다.
+            if calc_tab in draft:
+                out.append(("계산기 링크", "통과", calc_tab + " 탭"))
+            else:
+                out.append(("계산기 링크", "주의",
+                            "기획안은 '{}' 탭인데 본문에 그 탭 이름이 없습니다"
+                            .format(calc_tab)))
         else:
             out.append(("계산기 링크", "실패",
                         "기획안은 '{}' 탭인데 본문에 링크가 없습니다".format(calc_tab)))
@@ -185,8 +206,17 @@ def check_mechanical(draft, plan):
     else:
         out.append(("표", "통과", "있음"))
 
-    out.extend(check_dates(draft))                       # ← 추가
-    out.extend(check_recency(draft, source_dates()))     # ← 추가
+    out.extend(check_dates(draft))
+
+    # 외부 기사를 근거로 쓰지 않은 글에는 신선도 판정이 성립하지 않는다.
+    # 예전에는 날짜를 모를 때도 "근거 기사가 일주일 이내인지 확인하세요"를
+    # 내보냈고, 바로 아래 의미 검사 8번이 "해당 없음"으로 부정해
+    # 한 리포트 안에서 두 항목이 서로 모순됐다.
+    srcs = source_dates()
+    if srcs:
+        out.extend(check_recency(draft, srcs))
+    else:
+        out.append(("기사 나이", "통과", "외부 기사 근거 없음 — 판정 대상 아님"))
 
     return out
 
@@ -231,6 +261,8 @@ def build_verify_prompt(plan, draft):
 
 4. 판단 기준 반영 — 기획안의 판단 기준 3가지가 본문에 모두 등장하고
    각각 설명되었는가. 빠지거나 다른 내용으로 바뀌지 않았는가.
+   이 항목은 **일치 여부만** 본다. 기준이 올바른지는 11번에서 따로
+   판정하므로, 여기서 '통과' 가 기준이 타당하다는 뜻은 아니다.
 
 5. 문단별 정합성 — 각 섹션이 기획안의 흐름에 맞게 배치되었는가.
    기획과 무관한 곳으로 새는 문단이 있는가.
@@ -247,13 +279,30 @@ def build_verify_prompt(plan, draft):
    오래된 기사인데 "최근", "이번 주", "알려졌다"처럼 새 소식인 양
    쓰지 않았는가. 오래된 근거는 사실관계만 서술해야 합니다.
    
-9. 데이터에 있는 구분 이름을 그대로 쓰세요. 블록·유형 구분을
-  "도보 10분 이내" 같은 다른 기준으로 바꿔 부르지 마세요.
-  데이터에 없는 항목(도보 시간, 역세권 여부 등)으로 분류하지 마세요.
-  
-10. 거래 건수가 10건 미만이면 표에 건수를 함께 표기하고,
-    본문에서 참고치임을 밝히세요.
-    
+9. 데이터 구분 이름 — 본문이 데이터에 있는 구분 이름을 그대로 쓰는가.
+   블록·유형 구분을 "도보 10분 이내" 처럼 다른 기준으로 바꿔 부르지
+   않았는가. 데이터에 없는 항목(도보 시간, 역세권 여부)으로 분류하지
+   않았는가. **표에 없는 항목을 본문에서 언급하지 않았는가.**
+   독자가 표에서 찾을 수 없는 구분을 본문이 말하면 확인할 길이 없다.
+
+10. 적은 표본 표기 — 거래 건수가 10건 미만인 항목에 건수가 함께
+    적혀 있고, 본문에서 참고치임을 밝혔는가.
+
+11. 판단 기준의 타당성 — 이것은 기획안과의 일치가 아니라
+    **기준 자체가 성립하는지**를 보는 항목이다. 기획안에 있던
+    기준이라도 아래에 걸리면 '실패' 로 판정하라.
+    · 출처 없는 숫자로 선을 그었는가 ("3배를 넘으면", "50% 미만이면")
+    · 독자가 그 자리에서 확인할 수 없는 것을 기준으로 삼았는가
+      (등기부를 여러 건 떼야 하는 것, 국토부 실거래가에 없는
+       매도인·호실을 알아야 하는 것)
+    · 단위가 다른 값을 배수로 비교했는가
+      (지금 쌓인 매물 건수 ÷ 기간당 거래 건수)
+    · 확인 경로(사이트 → 메뉴 → 무엇을 고를지)가 실제로 그렇게
+      동작하는가. 없는 메뉴나 없는 필터 항목을 안내하지 않았는가
+    아래 규칙이 판정 기준이다.
+
+{criteria}
+
 아래 JSON 형식으로만 출력하세요. 다른 설명은 붙이지 마세요.
 
 {{
@@ -263,9 +312,12 @@ def build_verify_prompt(plan, draft):
     {{"name": "핵심 결론 일치", "verdict": "...", "note": "..."}},
     {{"name": "판단 기준 반영", "verdict": "...", "note": "..."}},
     {{"name": "문단별 정합성", "verdict": "...", "note": "..."}},
-    {{"name": "중복", "verdict": "...", "note": "..."}}
+    {{"name": "중복", "verdict": "...", "note": "..."}},
     {{"name": "시점 정합성", "verdict": "...", "note": "..."}},
-    {{"name": "기사 나이와 톤", "verdict": "...", "note": "..."}}
+    {{"name": "기사 나이와 톤", "verdict": "...", "note": "..."}},
+    {{"name": "데이터 구분 이름", "verdict": "...", "note": "..."}},
+    {{"name": "적은 표본 표기", "verdict": "...", "note": "..."}},
+    {{"name": "판단 기준의 타당성", "verdict": "...", "note": "..."}}
   ],
   "worst": "가장 시급하게 고쳐야 할 것 한 문장. 문제가 없으면 빈 문자열",
   "fix_request": "수정 요청으로 그대로 보낼 수 있는 문장. 문제가 없으면 빈 문자열"
@@ -275,6 +327,7 @@ def build_verify_prompt(plan, draft):
         output=plan.get("output_type", "-"),
         conclusion=plan.get("conclusion", "-"),
         crit=crit_text or "   (없음)",
+        criteria=cr.build_criteria_rules(),
         draft=draft[:12000],
     )
 
