@@ -261,6 +261,13 @@ def trim_excerpt(s):
 # 길이가 원인이면 두 번 다 같은 자리에서 막혔다.
 SUMMARY_INPUT_LIMIT = 150000
 SUMMARY_RETRY_LIMIT = 60000
+
+# 출력 한도. 1200 에서 3000 으로 올렸는데도 2026-09-15 예산결산특위
+# 제4차(86,702자)가 끊겼다. 적중어가 다섯이라 담을 것이 많은 회의록이다.
+# 넉넉히 주고, 그래도 끊기면 2차에서 두 배로 늘려 다시 묻는다.
+# 출력이 길어도 요약은 600자로 잘라 저장하므로 비용은 실제 생성분만 든다.
+SUMMARY_MAX_TOKENS = 8000
+SUMMARY_RETRY_TOKENS = 16000
 SUMMARY_WINDOW = 4000      # 적중어 하나당 남길 폭
 SUMMARY_TAIL = 8000        # 회의 끝. 의결 결과가 여기 있다
 
@@ -358,6 +365,9 @@ summary 는 최대 7줄. 줄 수를 채우려 하지 마라.
 담을 것이 두 줄뿐이면 두 줄만 쓰고, 하나도 없으면 빈 배열로 둔다.
 빈 배열은 올바른 답이다. 억지로 채운 요약보다 낫다.
 
+한 줄은 100자 안쪽으로 쓴다. 요약 전체는 600자까지만 저장되므로
+길게 쓰면 뒤가 잘려 오히려 내용을 잃는다. 짧게 쓰는 편이 많이 남는다.
+
 updates 는 위 현안 목록에 있는 것만. 이름을 그대로 쓴다.
 그 현안이 회의록에서 실제로 거론되었을 때만 넣는다.
 비슷한 주제가 나왔다는 이유로 넣지 마라.
@@ -396,20 +406,22 @@ def summarize(text, agenda, words=None, timeout=180, retries=2):
     listing = "\n".join("- {} (현재 단계: {})".format(n, st or "모름")
                         for n, _, st in agenda) or "- (없음)"
 
+    # 2차 시도를 어떻게 바꿀지는 1차가 어떻게 실패했는지에 달렸다.
+    # 입력이 길어 거절당한 것과 출력이 모자라 끊긴 것은 정반대 처방이다.
+    shrink_next = False     # 입력을 줄인다
+    more_tokens = False     # 출력을 늘린다
+
     for attempt in range(1, retries + 1):
-        # 2차에는 입력을 줄인다. 길이가 원인이면 같은 길이로 다시 물어도
-        # 같은 자리에서 막히고, 길이가 아니었다면 줄여도 손해가 없다.
-        limit = SUMMARY_INPUT_LIMIT if attempt == 1 else SUMMARY_RETRY_LIMIT
+        limit = SUMMARY_RETRY_LIMIT if shrink_next else SUMMARY_INPUT_LIMIT
+        maxtok = SUMMARY_RETRY_TOKENS if more_tokens else SUMMARY_MAX_TOKENS
         body_text = shrink_for_summary(text, words or [], limit)
         prompt = SUMMARY_PROMPT.format(agenda=listing) + body_text
-        print("    요약 시도 {}/{} — 회의록 {:,}자 중 {:,}자 넘김".format(
-            attempt, retries, len(text), len(body_text)))
+        print("    요약 시도 {}/{} — 회의록 {:,}자 중 {:,}자 넘김 "
+              "(출력 한도 {:,})".format(
+                  attempt, retries, len(text), len(body_text), maxtok))
         body = json.dumps({
             "model": SUMMARY_MODEL,
-            # 1200 으로는 한국어 요약 7줄에 updates JSON 까지 담기지 않아
-            # 응답이 중간에 끊겼고, 미완성 JSON 이 파싱에서 터져
-            # 요약이 조용히 실패하고 있었다.
-            "max_tokens": 3000,
+            "max_tokens": maxtok,
             "messages": [{"role": "user", "content": prompt}],
         }).encode("utf-8")
         req = urllib.request.Request(
@@ -424,8 +436,16 @@ def summarize(text, agenda, words=None, timeout=180, retries=2):
             if data.get("stop_reason") == "max_tokens":
                 # 끊긴 JSON 은 아래에서 어차피 터지지만, 그러면 원인이
                 # 'Expecting value' 로만 남아 무엇을 고쳐야 할지 모른다.
-                # 다시 물어도 같은 곳에서 끊기므로 바로 포기한다.
-                print("    요약 실패: 응답이 max_tokens 에서 끊겼습니다")
+                #
+                # 예전에는 여기서 바로 포기했다. "다시 물어도 같은 곳에서
+                # 끊긴다"고 봤기 때문인데, 같은 출력 한도로 물을 때만
+                # 맞는 말이었다. 한도를 늘리면 끝까지 쓸 수 있다.
+                print("    요약 실패({}/{}): 응답이 max_tokens 에서 "
+                      "끊겼습니다".format(attempt, retries))
+                more_tokens = True
+                if attempt < retries:
+                    time.sleep(2)
+                    continue
                 return None
             out = "".join(b.get("text", "") for b in data.get("content", [])
                           if b.get("type") == "text").strip()
@@ -447,6 +467,8 @@ def summarize(text, agenda, words=None, timeout=180, retries=2):
                 pass
             print("    요약 실패({}/{}) HTTP {}: {}".format(
                 attempt, retries, e.code, detail))
+            if e.code == 400 and "too long" in detail:
+                shrink_next = True
             if attempt < retries:
                 time.sleep(5 * attempt)
         except Exception as e:
