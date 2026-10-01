@@ -35,12 +35,40 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 MODEL = "claude-sonnet-5"
 
+# 물건 종류를 가르는 낱말. 긴 것을 먼저 두는 것이 중요하다.
+# "상가주택" 에는 "상가" 가 들어 있고 "오피스텔" 에는 "오피스" 가 들어 있어서,
+# 짧은 쪽이 앞에 오면 상가주택 글이 상가 글로 잡힌다.
+# 각 줄의 첫 낱말이 그 묶음의 이름이고, 같은 줄은 같은 물건으로 본다.
+PROPERTY_KINDS = [
+    ["지식산업센터", "지산", "아파트형공장"],
+    ["상가주택"],
+    ["근린상가", "상가"],
+    ["오피스텔"],
+    ["오피스", "사무실"],
+    ["공장", "창고"],
+    ["토지"],
+]
+
+
+def property_kind(text):
+    """글이 다루는 물건 종류를 알아낸다. 못 찾으면 None.
+
+    None 은 '종류를 특정하지 않는 글'이라는 뜻이다. 지역 현안처럼
+    물건 종류가 없는 키워드가 그렇고, 그때는 종류 검사를 건너뛴다.
+    """
+    for group in PROPERTY_KINDS:
+        if any(w in text for w in group):
+            return group[0]
+    return None
+
+
 def fetch_reference_links(keyword, count=6, timeout=15):
     """대표 키워드로 네이버 블로그를 검색해 제목+링크를 가져온다.
 
     검색어가 넓으면 무관한 글이 딸려온다("인천 세차장 매매" 같은 것).
-    제목에 지역·주제 낱말이 없으면 버린다. 남는 게 없으면 빈 목록을 돌려주고,
-    호출하는 쪽에서 '더 읽어보기' 섹션 자체를 생략한다.
+    제목에 지역명이 없거나 물건 종류가 다르면 버린다.
+    남는 게 없으면 빈 목록을 돌려주고, 호출하는 쪽에서
+    '더 읽어보기' 섹션 자체를 생략한다.
     """
     url = "https://naverapihub.apigw.ntruss.com/search/v1/blog?" + urllib.parse.urlencode(
         {"query": keyword, "display": count, "sort": "sim"}
@@ -63,6 +91,13 @@ def fetch_reference_links(keyword, count=6, timeout=15):
     # "지식산업센터"만으로는 마곡·성수 분양 홍보 글이 통과한다.
     must_have = ["동탄", "화성", "기흥", "용인"]
 
+    # 지역만 보면 물건 종류가 달라도 통과한다. 2026-10-01 실거래 글에
+    # "동탄상가주택 매매 (산업단지) 동탄2신도시상가주택" 이 '더 읽어보기'로
+    # 실렸다. 지역은 같고 물건은 다르니 독자에게 쓸모가 없다.
+    # 이 함수의 설명은 '지역·주제 낱말'을 본다고 적혀 있었지만
+    # 실제로는 지역만 보고 있었다.
+    want_kind = property_kind(keyword)
+
     # 분양 홍보 블로그가 상위에 많이 걸린다. 독자에게 도움이 안 되고
     # 남의 영업 글로 내보내는 셈이라 제외한다.
     exclude = ["분양안내", "분양개시", "홍보관", "모델하우스",
@@ -78,6 +113,9 @@ def fetch_reference_links(keyword, count=6, timeout=15):
             dropped += 1
             continue
         if not any(w in title for w in must_have):
+            dropped += 1
+            continue
+        if want_kind and property_kind(title) != want_kind:
             dropped += 1
             continue
         refs.append({"title": title, "link": link})
@@ -546,7 +584,16 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 남의 사례를 읽고 끝나는 게 아니라, 독자가 자기 숫자·자기 조건을 넣어볼 수 있는 형태로 만드세요.
 
 5. ## 판단 기준 3가지
-   - 위 [확정 기획]의 판단 기준 3가지를 그대로 사용하되, 각 항목마다 왜 그것이 중요한지 2~3문장으로 풀어 쓰세요.
+   - 위 [확정 기획]의 판단 기준 3가지를 **먼저 점검하세요.** 기획은 초안보다
+     앞서 만들어진 것이라 확인이 덜 된 항목이 섞입니다. 아래에 걸리는 항목은
+     [판단 기준] 규칙에 맞게 고쳐서 쓰세요. 고쳤다는 말은 본문에 쓰지 말고
+     고친 결과만 쓰세요.
+     · 출처 없는 기준선이 들어간 항목 — "3배를 넘는지", "50% 미만이면"
+     · 독자가 그 자리에서 확인할 수 없는 항목 — 등기부 여러 건을 떼야 하는 것,
+       국토부 실거래가에 나오지 않는 매도인·호실을 알아야 하는 것
+     · 단위가 다른 값을 배수로 비교하는 항목 — 매물 건수 ÷ 거래 건수
+   - 남긴 항목은 각각 왜 그것이 중요한지 2~3문장으로 풀고,
+     **확인 경로(사이트 → 메뉴 → 무엇을 고를지)를 함께 적으세요.**
    - **개수를 늘리거나 줄이지 마세요.** 소제목의 숫자와 실제 항목 수가 반드시 같아야 합니다.
      다룰 내용이 더 있으면 다른 섹션에 넣으세요.
    - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 하지 마세요.
@@ -579,7 +626,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 - 핵심 결론: {conclusion}
 - {criteria_label}:
 {criteria_desc}
-- 검색 관심도 1위 키워드: {kw}
+- 이번 글의 주제 키워드: {kw}
 
 [참고 링크 후보 (네이버 블로그)]
 {refs_desc}
