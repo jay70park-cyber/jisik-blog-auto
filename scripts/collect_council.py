@@ -738,7 +738,23 @@ def main():
     print("\n저장 {} (누적 {}건)".format(OUT_CSV, len(seen)))
 
     if not blocks:
-        print("알릴 것이 없습니다.")
+        # 보낼 것이 없어도 한 줄은 보낸다.
+        #
+        # 2026-10-01 중복 알림을 막고 나니 조용한 날이 생겼는데,
+        # 조용한 것과 워크플로가 죽은 것이 겉으로 똑같다.
+        # 둘 다 아무것도 안 온다. 그러면 몇 주 멈춰 있어도 모른다.
+        last = max((m.get("회의일", "") for m in meetings), default="")
+        lines = ["[화성시의회 회의록] " + today,
+                 "새 회의록 없음 · 누적 {}건 · 마지막 회의 {}".format(
+                     len(seen), last or "?")]
+        # 요약을 못 만든 채 남아 있는 것이 있으면 조용히 쌓이지 않게 알린다
+        pending = sum(1 for r in seen.values()
+                      if not (r.get("요약") or "").strip())
+        if pending:
+            lines.append("요약 대기 {}건".format(pending))
+        text = "\n".join(lines)
+        print(text)
+        send_telegram(text)
         return
 
     blocks.sort(key=lambda b: not b[0])
