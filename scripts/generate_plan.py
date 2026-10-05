@@ -165,13 +165,55 @@ def call_claude(prompt, timeout=120, retries=2):
     return ""
 
 def parse_json(text):
+    """기획안 JSON 을 읽는다.
+
+    실패하면 원문을 남긴다. 2026-10-05 에 'Unterminated string' 으로
+    터졌는데 원문이 없어 응답이 잘린 것인지 형식이 깨진 것인지
+    가릴 수 없었다. call_claude 는 stop_reason 까지 찍는데
+    파싱 쪽만 아무것도 안 남기고 있었다.
+    """
     if not text or not text.strip():
         raise ValueError("Claude 응답이 비어 있습니다 (토큰 한도 확인)")
-    text = text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
+    cleaned = text.replace("```json", "").replace("```", "").strip()
+    try:
+        # strict=False 는 문자열 안의 줄바꿈을 허용한다.
+        # 판단 기준처럼 긴 값을 모델이 여러 줄로 쓰면 기본 파서는 거부한다.
+        return json.loads(cleaned, strict=False)
+    except json.JSONDecodeError as e:
+        print("기획안 JSON 파싱 실패: {}".format(e), flush=True)
+        print("  응답 {:,}자 · 끝 40자: {!r}".format(
+            len(cleaned), cleaned[-40:]), flush=True)
+        if not cleaned.rstrip().endswith("}"):
+            print("  → 닫는 중괄호가 없습니다. 응답이 중간에 끊겼습니다.",
+                  flush=True)
+        print("  ── 원문 ──", flush=True)
+        print(cleaned[:1500], flush=True)
+        print("  ──────────", flush=True)
+        raise
 
 
 HISTORY_KEEP = 8          # 최근 몇 회를 기억할 것인가
+
+
+def request_plan(result, feedback=None, previous=None, tries=2):
+    """기획안을 받아 JSON 까지 읽는다.
+
+    call_claude 에는 재시도가 있지만 파싱은 그 바깥에서 했다.
+    그래서 응답이 깨져 오면 재시도 한 번 없이 그대로 터졌고,
+    워크플로가 멈춰 그날 글이 나오지 않았다(2026-10-05).
+    """
+    last = None
+    for i in range(1, tries + 1):
+        raw = call_claude(build_plan_prompt(result, feedback, previous))
+        try:
+            return parse_json(raw)
+        except Exception as e:
+            last = e
+            if i < tries:
+                print("기획안을 다시 요청합니다 ({}/{})".format(i, tries),
+                      flush=True)
+                time.sleep(3)
+    raise last
 
 
 def load_history():
@@ -424,9 +466,8 @@ def build_plan_prompt(result, feedback=None, previous=None):
    - 판단 기준이나 체크리스트 형태로 쓰지 마세요.
 
 이 글은 판단 기준을 만들지 않습니다. 다만 숫자를 다루는 규칙은
-아래와 같습니다. 출처, 표본, 확인 경로에 관한 대목을 그대로 지키세요.
-
-""" + cr.build_criteria_rules()
+따로 적어 둔 [판단 기준] 을 따르세요.
+출처, 표본, 확인 경로에 관한 대목을 그대로 지키세요."""
         field_4 = '"criteria": ["짚을 사실 1", "짚을 사실 2", "짚을 사실 3"],'
         calc_note = '   - 이 트랙은 대개 "없음"이 맞습니다.'
     else:
@@ -444,11 +485,11 @@ def build_plan_prompt(result, feedback=None, previous=None):
    - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 쓰지 마세요. 책임 소재가 될 수 있습니다.
    - 각 항목은 한 문장, 독자가 스스로 예/아니오를 판단할 수 있어야 합니다.
    - 아래 [판단 기준] 규칙을 그대로 지키세요. 특히 **출처 없는 숫자로
-     선을 긋지 마세요.** 기준을 세울 수 없으면 상대 비교로 쓰세요.
-
-""" + cr.build_criteria_rules()
+     선을 긋지 마세요.** 기준을 세울 수 없으면 상대 비교로 쓰세요."""
         field_4 = '"criteria": ["판단 기준 1", "판단 기준 2", "판단 기준 3"],'
         calc_note = '   - 이 글의 주제와 직접 관련이 없으면 "없음"으로 두세요.'
+
+    criteria_rules = cr.build_criteria_rules()
 
     base = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 기획을 돕습니다.
 
@@ -470,7 +511,11 @@ def build_plan_prompt(result, feedback=None, previous=None):
 5. 연결할 계산기 탭을 고릅니다. 후보: {", ".join(CALC_TABS)}
 {calc_note}
 
+{criteria_rules}
+
 아래 JSON 형식으로만 출력하세요. 다른 설명은 붙이지 마세요.
+**각 값은 한 줄로 쓰세요.** 값 안에 줄바꿈을 넣으면 JSON 이 깨집니다.
+길게 설명하지 말고, 한 문장으로 줄이세요.
 
 {{
   "reader": "독자 상황 (위 후보 중 하나)",
@@ -575,7 +620,7 @@ def main():
     print("트랙: {} / 키워드: {}".format(
         result.get("track", "jisik"), result.get("top_keyword", "")))
 
-    plan = parse_json(call_claude(build_plan_prompt(result)))
+    plan = request_plan(result)
     baseline = latest_update_id()
     send_message(format_plan_message(plan, result, 0))
 
@@ -588,7 +633,7 @@ def main():
             print("확인 응답 수신 — 즉시 진행합니다.")
             break
         print("기획안 수정 요청 수신: " + feedback)
-        plan = parse_json(call_claude(build_plan_prompt(result, feedback=feedback, previous=plan)))
+        plan = request_plan(result, feedback=feedback, previous=plan)
         send_message(format_plan_message(plan, result, round_no))
     else:
         print("수정 횟수 상한 도달 — 현재 기획안으로 진행합니다.")
