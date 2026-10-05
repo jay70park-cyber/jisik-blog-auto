@@ -35,6 +35,13 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 MODEL = "claude-sonnet-5"
+
+# 출력 한도. 이것은 사고 과정(thinking)과 답(text)을 **합친** 한도다.
+# 4000 으로 두었더니 프롬프트가 길어지자 사고가 4000 을 다 먹고
+# 답이 한 글자도 안 나왔다(2026-10-05, 블록: ['thinking'] / 텍스트 0자).
+# 기획안 JSON 은 길어야 600자지만 사고에 쓸 여유를 넉넉히 둔다.
+# 한도를 올려도 비용은 실제로 생성한 만큼만 든다.
+PLAN_MAX_TOKENS = 16000
 STATE_DIR = "state"
 PLAN_FILE = os.path.join(STATE_DIR, "plan.json")
 HISTORY_FILE = os.path.join(STATE_DIR, "plan_history.json")
@@ -115,9 +122,10 @@ def call_claude(prompt, timeout=120, retries=2):
     url = "https://api.anthropic.com/v1/messages"
     print("프롬프트 길이: {:,}자".format(len(prompt)))
 
+    maxtok = PLAN_MAX_TOKENS
     for attempt in range(1, retries + 1):
         body = json.dumps(
-            {"model": MODEL, "max_tokens": 4000,
+            {"model": MODEL, "max_tokens": maxtok,
              "messages": [{"role": "user", "content": prompt}]},
             ensure_ascii=False,
         ).encode("utf-8")
@@ -144,10 +152,10 @@ def call_claude(prompt, timeout=120, retries=2):
         parts = data.get("content", [])
         text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
 
-        print("stop_reason: {} / 블록: {} / 텍스트 {}자".format(
+        print("stop_reason: {} / 블록: {} / 텍스트 {}자 (한도 {:,})".format(
             data.get("stop_reason"),
             [p.get("type") for p in parts],
-            len(text)), flush=True)
+            len(text), maxtok), flush=True)
         usage = data.get("usage") or {}
         if usage:
             print("토큰: 입력 {} / 출력 {}".format(
@@ -159,6 +167,14 @@ def call_claude(prompt, timeout=120, retries=2):
         # 비어 있으면 응답 원문을 남긴다. 다음에 같은 일이 나면 이 기록으로 판단한다.
         print("빈 응답 ({}/{}). 원문 앞부분:".format(attempt, retries), flush=True)
         print(json.dumps(data, ensure_ascii=False)[:800], flush=True)
+
+        if data.get("stop_reason") == "max_tokens":
+            # 사고 과정이 한도를 다 쓴 것이다. 같은 한도로 다시 물으면
+            # 같은 자리에서 막힌다. 올려서 다시 묻는다.
+            maxtok = min(maxtok * 2, 32000)
+            print("→ 사고 과정이 출력 한도를 다 썼습니다. "
+                  "한도를 {:,} 로 올려 다시 요청합니다.".format(maxtok), flush=True)
+
         if attempt < retries:
             time.sleep(attempt * 5)
 
