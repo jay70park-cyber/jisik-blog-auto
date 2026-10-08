@@ -81,6 +81,9 @@ COUNCIL_KEYWORDS = ["화성시의회", "화성시 예산", "동탄 개발 현안
 LOCAL_FALLBACK_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
 
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
+# 시험 실행. 안건을 소모하지 않고 발행 기록도 남기지 않는다.
+# 지도·서식을 고치고 결과만 보고 싶을 때 쓴다.
+DRY_RUN = os.environ.get("DRY_RUN") == "1"
 NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
 PLAN_CSV = os.path.join("data", "plan_projects.csv")
 STATE_DIR = "state"
@@ -708,7 +711,6 @@ def main():
 
     agenda = None
     skip_log = []
-
     if track == "local":
         # 소재를 키워드가 아니라 현안에서 고른다.
         # 키워드 점수로 고르면 같은 키워드가 계속 1등이라 소재가 고착된다.
@@ -768,8 +770,11 @@ def main():
             # 거기에 맞춰야 한다 — 제목이 재료보다 커지지 않게.
             "재료수": agenda.get("_material", 0),
         }
-        write_last_agenda_id(agenda["id"])
-        mark_published(agenda["id"])
+        if DRY_RUN:
+            print("시험 실행 — 안건 순서와 발행 기록을 건드리지 않습니다.")
+        else:
+            write_last_agenda_id(agenda["id"])
+            mark_published(agenda["id"])
 
     with open("collection_result.json", "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
