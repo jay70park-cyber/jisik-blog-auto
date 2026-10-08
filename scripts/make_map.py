@@ -411,6 +411,11 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
     # 선형일 때는 시점 하나만 잰다. 양끝을 다 이으면 그림이 어지럽다.
     hub = next(((la, ln) for n, la, ln, _ in LANDMARKS if n == "동탄역"), None)
     far_pts = pts if pts else segs[0][:1]
+    # 노선이 동탄역을 지나면 거리를 재지 않는다.
+    # 지나가는 역까지 몇 km 라고 긋는 것은 군더더기다.
+    if hub and any(dist_km(hub[0], hub[1], la, ln) < LABEL_GAP_KM
+                   for _, la, ln in flat):
+        far_pts = []
     if hub:
         for name, la, ln in far_pts:
             km = dist_km(hub[0], hub[1], la, ln)
@@ -480,18 +485,28 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
                                   ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
 
     if segs and line_label and first_u:
-        ux, uy, xs, ys = first_u
-        m = len(xs) // 2
-        if len(xs) % 2 == 0:
-            mx = (xs[m - 1] + xs[m]) / 2.0
-            my = (ys[m - 1] + ys[m]) / 2.0
+        # 짧은 글자는 선 옆에 붙여야 그 지점 이야기인 줄 안다
+        # ('함봉산 관통' 처럼). 길거나 갈래가 여럿이면 선 옆 어디에
+        # 놓아도 무언가를 덮는다. 그때는 아래 구석으로 뺀다.
+        if len(line_label) <= 16 and len(segs) == 1:
+            ux, uy, xs, ys = first_u
+            m = len(xs) // 2
+            if len(xs) % 2 == 0:
+                mx = (xs[m - 1] + xs[m]) / 2.0
+                my = (ys[m - 1] + ys[m]) / 2.0
+            else:
+                mx, my = xs[m], ys[m]
+            # 선과 직각으로 비켜 놓는다
+            ax.annotate(line_label, (mx, my), xytext=(-uy * 62, ux * 62),
+                        textcoords="offset points", ha="center", va="center",
+                        fontsize=9.5, color="#7A5A12", zorder=7,
+                        bbox=dict(boxstyle="round,pad=0.28", fc="white",
+                                  ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
         else:
-            mx, my = xs[m], ys[m]
-        # 선과 직각으로 비켜 놓는다
-        ax.annotate(line_label, (mx, my), xytext=(-uy * 62, ux * 62),
-                    textcoords="offset points", ha="center", va="center",
-                    fontsize=9.5, color="#7A5A12", zorder=7,
-                    bbox=dict(boxstyle="round,pad=0.28", fc="white",
+            ax.text(0.015, 0.02, line_label, transform=ax.transAxes,
+                    ha="left", va="bottom", fontsize=9.5, color="#7A5A12",
+                    zorder=8,
+                    bbox=dict(boxstyle="round,pad=0.3", fc="white",
                               ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
 
     # 이번 글의 대상 (점)
@@ -544,6 +559,9 @@ def build_map_figure(agenda, caption=""):
     둘 다 없으면 빈 문자열을 돌려준다. 부르는 쪽은 그대로 붙이면 된다.
 
     캡션은 한 줄이다. 배경이 실제 지도일 때와 개념도일 때 문구가 다르다.
+    그림 안에는 제목을 넣지 않는다. 캡션이 이미 '트램 노선'이라고
+    적는데 그림 안에도 같은 말을 쓰면 두 번 읽힌다.
+    그림만 따로 떼어 보는 경우를 위해 alt 에는 캡션이 들어간다.
     """
     if not agenda:
         return ""
@@ -552,17 +570,15 @@ def build_map_figure(agenda, caption=""):
 
     segs, seg_label = load_line(aid)
     if segs:
-        # load_line 이 두 점 미만인 갈래는 이미 버렸으므로 길이만 본다
-        uri, mode = draw_map([], title=name + " 구간",
-                             lines=segs, line_label=seg_label,
-                             return_mode=True)
+        # load_line 이 두 점 미만인 갈래는 이미 버렸으므로 있는지만 본다
         what = "노선" if len(segs) > 1 else "구간"
+        uri, mode = draw_map([], lines=segs, line_label=seg_label,
+                             return_mode=True)
     else:
         pt = parse_point(agenda)
         if not pt:
             return ""
-        uri, mode = draw_map([(name, pt[0], pt[1])], title=name + " 위치",
-                             return_mode=True)
+        uri, mode = draw_map([(name, pt[0], pt[1])], return_mode=True)
         what = "위치"
 
     if not uri:
