@@ -1168,7 +1168,12 @@ def main():
     track = result.get("track", "jisik")
     # 회의록 특집의 근거는 회의록이지 남의 블로그가 아니다.
     # 키워드로 네이버 블로그를 뒤지면 장례식장 화환 광고까지 딸려온다.
-    refs = [] if track == "council" else fetch_reference_links(result["top_keyword"])
+    # 지역 현안과 회의록 글의 근거는 고시·회의록이지 남의 블로그가 아니다.
+    # 2026-09-24 에는 회의록 글에 장례식장 화환 광고가,
+    # 2026-10-08 에는 상권 글에 아파트 분양 글이 '더 읽어보기' 로 실렸다.
+    # 현안명이 키워드라 물건 종류 필터도 걸리지 않는다.
+    refs = [] if track in ("council", "local") else fetch_reference_links(
+        result["top_keyword"])
     print("트랙: " + track)
     prompt = build_prompt(result, refs, today, plan=plan, category=track)
 

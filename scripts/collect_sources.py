@@ -95,6 +95,13 @@ FRESH_DAYS = 14        # 최근진전일이 이 안이면 '진전 있음'
 NEW_GRACE_DAYS = 30    # 추가된 지 이 안이면 신선도 판정 면제
 NEWS_DAYS = 14         # 구글 뉴스를 이 기간만 센다
 NOTICE_DAYS = 1825     # 고시는 연표 재료다. 시작점이 있어야 흐름이 보인다
+
+# 글 한 편을 세우는 데 필요한 최소 재료 수.
+# 2026-10-08: 같은 날 올라온 원공고·정정공고 한 쌍(실질 1건)으로
+# '동탄 상권 변화' 글이 나왔다. 분량을 채우려고 법 조문을 길게 인용하고
+# 무관한 지역화폐 예산 이야기까지 끌어왔다.
+# 재료가 모자라면 글이 커지는 게 아니라 채우기로 흐른다.
+MIN_MATERIAL = 2
                        # 백필이 부서별로 몇 년치를 가져오므로 넓게 잡는다
 NOTICE_LIMIT = 10      # 한 현안에 붙일 고시 최대 건수
 PLAN_LIMIT = 6        # 한 현안에 붙일 재정계획 사업 최대 건수
@@ -314,11 +321,31 @@ def check_freshness(row):
         prog if prog is not None else "?"), []
 
 
-def pick_agenda():
-    """마지막으로 다룬 안건 다음부터 돌며, 진전 있는 첫 안건을 고른다.
+def count_material(row, news=None):
+    """이 현안으로 글 한 편을 세울 재료가 몇 건인가.
 
-    한 바퀴를 다 돌아도 진전 있는 안건이 없으면
-    '가장 오래 안 다룬 안건'을 그냥 쓴다. 발행을 거르지는 않는다.
+    진전 판정(check_freshness)과는 다른 질문이다. 진전은 '움직였나',
+    재료는 '쓸 것이 있나' 를 본다. 고시 한 건이 새로 올라오면 진전은
+    있지만 글 한 편은 안 된다.
+
+    같은 날 같은 부서가 올린 것은 한 건으로 센다. 원공고와 정정공고가
+    따로 세어지면 '고시 2건' 으로 보여 재료가 있는 것처럼 된다.
+    """
+    notices = load_notices(row)
+    uniq = {(n.get("date", ""), n.get("dept", "")) for n in notices}
+    return len(uniq) + len(load_plans(row)) + len(news or [])
+
+
+def pick_agenda():
+    """마지막으로 다룬 안건 다음부터 돌며, 진전이 있고 재료가 있는 첫 안건.
+
+    진전만 보고 고르면 고시 한 건짜리 사안이 뽑힌다. 그 상태로 글을
+    쓰면 분량을 채우려고 무관한 재료가 섞인다(2026-10-08).
+    그래서 재료 수를 함께 보고, 모자라면 다음 안건으로 넘긴다.
+
+    한 바퀴를 다 돌아도 없으면 재료가 가장 많은 안건을, 그것도 없으면
+    '가장 오래 안 다룬 안건' 을 쓴다. 발행을 거르지는 않되,
+    재료가 적다는 사실은 로그와 collection_result 로 아래 단계에 넘긴다.
     """
     rows = load_agenda()
     if not rows:
@@ -330,13 +357,35 @@ def pick_agenda():
     order = rows[start:] + rows[:start]
 
     log = []
+    thin = []          # 진전은 있으나 재료가 모자란 안건
     for r in order:
         ok, why, news = check_freshness(r)
-        log.append("{} {} — {}".format("○" if ok else "×", r["id"], why))
-        if ok:
+        if not ok:
+            log.append("× {} — {}".format(r["id"], why))
+            continue
+        mat = count_material(r, news)
+        if mat < MIN_MATERIAL:
+            log.append("△ {} — {} · 재료 {}건 (최소 {}건) → 건너뜀".format(
+                r["id"], why, mat, MIN_MATERIAL))
             r["_news"] = news
             r["_why"] = why
-            return r, log, why
+            r["_material"] = mat
+            thin.append(r)
+            continue
+        log.append("○ {} — {} · 재료 {}건".format(r["id"], why, mat))
+        r["_news"] = news
+        r["_why"] = why
+        r["_material"] = mat
+        return r, log, why
+
+    # 재료가 충분한 안건이 없다. 그중 재료가 가장 많은 것을 쓴다.
+    if thin:
+        pick = max(thin, key=lambda r: r.get("_material", 0))
+        pick["_why"] = "{} (재료 {}건 — 최소 {}건에 못 미침)".format(
+            pick["_why"], pick.get("_material", 0), MIN_MATERIAL)
+        log.append("! 재료 충분한 안건 없음 → {} 선택 (재료 {}건)".format(
+            pick["id"], pick.get("_material", 0)))
+        return pick, log, pick["_why"]
 
     # 전부 스킵됨 — 마지막발행일이 가장 오래된 것을 고른다
     def last_pub_key(r):
@@ -345,8 +394,11 @@ def pick_agenda():
 
     pick = sorted(rows, key=last_pub_key)[0]
     pick["_news"] = []
-    pick["_why"] = "전 안건 진전 없음 — 가장 오래 안 다룬 안건 선택"
-    log.append("! 전부 스킵 → {} 강제 선택".format(pick["id"]))
+    pick["_material"] = count_material(pick)
+    pick["_why"] = "전 안건 진전 없음 — 가장 오래 안 다룬 안건 선택 (재료 {}건)".format(
+        pick["_material"])
+    log.append("! 전부 스킵 → {} 강제 선택 (재료 {}건)".format(
+        pick["id"], pick["_material"]))
     return pick, log, pick["_why"]
 
 
@@ -712,6 +764,9 @@ def main():
             "최근뉴스": [{"date": d, "title": t} for d, t in agenda.get("_news", [])[:8]],
             "관련고시": load_notices(agenda),
             "관련계획": load_plans(agenda),
+            # 재료 수를 기획·초안 단계로 넘긴다. 적으면 글의 크기도
+            # 거기에 맞춰야 한다 — 제목이 재료보다 커지지 않게.
+            "재료수": agenda.get("_material", 0),
         }
         write_last_agenda_id(agenda["id"])
         mark_published(agenda["id"])
