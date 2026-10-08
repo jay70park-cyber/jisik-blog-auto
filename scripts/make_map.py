@@ -77,6 +77,17 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
 ]
 
+# 굵은 글씨용. 이것까지 등록해야 bold 가 진짜 굵게 나온다.
+# 등록하지 않으면 matplotlib 이 흉내만 내고 경고를 쏟는다
+# (findfont: Failed to find font weight bold). 핀 이름표가 전부
+# bold 라서 실제 지도 위에서 또렷함 차이가 난다.
+BOLD_PATHS = {
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf":
+        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf":
+        "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
+}
+
 LINE_CSV = os.path.join("data", "agenda_lines.csv")
 
 # ── 정적지도 ────────────────────────────────────
@@ -102,6 +113,10 @@ def _use_korean_font():
         if os.path.exists(p):
             try:
                 fm.fontManager.addfont(p)
+                bold = BOLD_PATHS.get(p)
+                if bold and os.path.exists(bold):
+                    # 같은 집안의 굵은 글꼴로 등록된다. 없으면 그냥 넘어간다.
+                    fm.fontManager.addfont(bold)
                 plt.rcParams["font.family"] = fm.FontProperties(
                     fname=p).get_name()
                 return True
