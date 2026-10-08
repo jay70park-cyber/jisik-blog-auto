@@ -503,8 +503,10 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
                         bbox=dict(boxstyle="round,pad=0.28", fc="white",
                                   ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
         else:
-            ax.text(0.015, 0.02, line_label, transform=ax.transAxes,
-                    ha="left", va="bottom", fontsize=9.5, color="#7A5A12",
+            # 위쪽 구석에 둔다. 아래 왼쪽은 네이버 로고 자리다.
+            # 출처 표시를 가리면 이용약관에 걸린다.
+            ax.text(0.015, 0.98, line_label, transform=ax.transAxes,
+                    ha="left", va="top", fontsize=9.5, color="#7A5A12",
                     zorder=8,
                     bbox=dict(boxstyle="round,pad=0.3", fc="white",
                               ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
@@ -583,8 +585,15 @@ def build_map_figure(agenda, caption=""):
 
     if not uri:
         return ""
+    # 선형 현안은 지점을 직선으로 잇는다. 실제 선형이 아니다.
+    # 개념도 위에서는 대충 그린 그림으로 읽히지만, 진짜 지도 위에
+    # 직선을 그으면 '트램이 저 길로 간다'로 읽힌다. 배경을 좋게 만든
+    # 대가로 생긴 오해라서 캡션에서 짚어야 한다.
     if caption:
         cap = caption
+    elif mode == "map" and segs:
+        cap = "{} {} (네이버 지도 · 주요 지점을 직선으로 연결 — 실제 선형과 다릅니다)".format(
+            name, what)
     elif mode == "map":
         cap = "{} {} (네이버 지도 · 동탄권 주요 지점 대비)".format(name, what)
     else:
