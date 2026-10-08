@@ -10,13 +10,17 @@ on:
       council:
         description: '시의회 회의록 특집으로 돌리기 (1이면 켜짐)'
         default: '0'
+      dry_run:
+        description: '시험 실행 (1이면 안건을 소모하지 않음)'
+        default: '0'  
   schedule:
     # 정각은 전 세계 작업이 몰려 지연/스킵되므로 분을 어긋나게 잡는다.
     # 1차: 월·목 08:17 KST = UTC 23:17 (일·수)
     - cron: '17 23 * * 0,3'
     # 백업: 월·목 11:23 KST = UTC 02:23 (월·목) — 1차가 스킵되면 여기서 실행
     - cron: '23 2 * * 1,4'
-env:                                                      
+env:    
+  DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
   NCP_MAP_CLIENT_ID: ${{ secrets.NCP_MAP_CLIENT_ID }}
   NCP_MAP_CLIENT_SECRET: ${{ secrets.NCP_MAP_CLIENT_SECRET }}
   
