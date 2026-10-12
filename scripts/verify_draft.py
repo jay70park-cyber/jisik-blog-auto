@@ -634,11 +634,30 @@ def parse_json(raw, label):
         return None
 
 
+def as_dict(x):
+    """모델이 돌려준 것이 사전이 아닐 수 있다. 그때는 빈 사전으로 본다.
+
+    JSON 해석은 성공해도 모양이 다를 수 있다. 배열이 오면
+    .get() 에서 AttributeError 가 나고, 그것이 main() 까지 올라가
+    **이미 끝난 형식 검사와 기획안 대조까지 같이 잃는다.**
+    2026-10-12 에 검증 리포트가 통째로 안 나간 경로가 이것이다.
+    """
+    return x if isinstance(x, dict) else {}
+
+
+def as_dicts(x):
+    """목록 안에서 사전인 것만 남긴다."""
+    if not isinstance(x, list):
+        return []
+    return [i for i in x if isinstance(i, dict)]
+
+
 def check_facts(draft):
-    """사실 확인 두 단계. 반환 (자료대조결과, 외부확인결과).
+    """사실 확인 두 단계. 반환 (자료대조결과, 외부확인결과, 웹으로넘긴주장).
 
     어느 단계가 실패해도 나머지는 돌린다. 검증이 못 돌았다고
     발행을 막지는 않는다 — 다만 리포트에 못 돌았다고 적는다.
+    **이 함수는 예외를 밖으로 내보내지 않는다.**
     """
     if not FACTCHECK:
         print("사실 확인을 건너뜁니다 (FACTCHECK=0).")
@@ -655,7 +674,7 @@ def check_facts(draft):
     except Exception as e:
         print("자료 대조 실패: " + str(e))
 
-    claims = (src or {}).get("claims", [])
+    claims = as_dicts(as_dict(src).get("claims"))
     todo = [c for c in claims
             if c.get("verdict") == "자료에없음"
             and c.get("kind") in SEARCHABLE][:MAX_SEARCH]
@@ -694,19 +713,61 @@ FACT_VERDICT = {
 }
 
 
+# 텔레그램 sendMessage 한 통의 한도는 4,096자다. 넘기면 400 이 난다.
+# 2026-10-12 에 검증 리포트가 4,378자가 되어 통째로 안 갔다.
+# 사실 확인을 붙여 리포트가 두 배 가까이 길어졌는데 보내는 쪽을
+# 그대로 뒀다. 한도에 여유를 두고 줄 단위로 나눈다.
+TELEGRAM_LIMIT = 3900
+
+
+def split_for_telegram(text, limit=TELEGRAM_LIMIT):
+    """줄 단위로 끊어 limit 이하 조각으로 나눈다.
+
+    줄 가운데에서 끊지 않는다. 검증 리포트는 한 줄이 한 항목이라
+    가운데가 끊기면 읽을 수 없다. 한 줄이 통째로 한도를 넘는
+    예외적인 경우에만 글자 수로 자른다.
+    """
+    out, buf = [], ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(line[:limit])
+            line = line[limit:]
+        if buf and len(buf) + 1 + len(line) > limit:
+            out.append(buf)
+            buf = line
+        else:
+            buf = (buf + "\n" + line) if buf else line
+    if buf:
+        out.append(buf)
+    return out or [""]
+
+
 def send_telegram(text, timeout=20):
+    """길면 나눠 보낸다. 한 조각이 실패해도 나머지는 계속 보낸다."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
-    body = urllib.parse.urlencode(
-        {"chat_id": TELEGRAM_CHAT_ID, "text": text}).encode("utf-8")
-    try:
-        with urllib.request.urlopen(
-                urllib.request.Request(url, data=body, method="POST"),
-                timeout=timeout) as res:
-            res.read()
-    except Exception as e:
-        print("텔레그램 전송 오류: " + str(e))
+    parts = split_for_telegram(text)
+    total = len(parts)
+    sent = 0
+    for i, part in enumerate(parts, 1):
+        msg = part if total == 1 else "({}/{})\n{}".format(i, total, part)
+        body = urllib.parse.urlencode(
+            {"chat_id": TELEGRAM_CHAT_ID, "text": msg}).encode("utf-8")
+        try:
+            with urllib.request.urlopen(
+                    urllib.request.Request(url, data=body, method="POST"),
+                    timeout=timeout) as res:
+                res.read()
+            sent += 1
+        except Exception as e:
+            print("텔레그램 전송 오류 ({}/{}, {}자): {}".format(
+                i, total, len(msg), e))
+    if total > 1:
+        print("텔레그램 {}조각 중 {}조각 발송".format(total, sent))
 
 
 def main():
@@ -731,32 +792,101 @@ def main():
     if sem:
         lines.append("")
         lines.append("■ 기획안 대조")
-        for it in sem.get("items", []):
+        for it in as_dicts(as_dict(sem).get("items")):
             lines.append("  {} {} — {}".format(
                 MARK.get(it.get("verdict"), "·"),
                 it.get("name", "?"), it.get("note", "")))
 
-        worst = (sem.get("worst") or "").strip()
+        worst = str(as_dict(sem).get("worst") or "").strip()
         if worst:
             lines += ["", "■ 가장 시급한 것", "  " + worst]
 
         # 수정 요청 문장은 사실 확인까지 끝난 뒤에 합쳐서 낸다.
         # 여기서 내보내면 사실관계 수정안이 빠진 채로 나간다.
-        fix = (sem.get("fix_request") or "").strip()
+        fix = str(as_dict(sem).get("fix_request") or "").strip()
     else:
         fix = ""
         lines += ["", "■ 기획안 대조", "  검증 호출에 실패해 건너뛰었습니다."]
 
     # 사실 확인
-    src, web, searched = check_facts(draft)
+    #
+    # 이 구간 전체를 감싼다. 여기서 터져도 위에서 끝난 형식 검사와
+    # 기획안 대조는 반드시 나가야 한다. 새로 붙인 겹이 실패했다고
+    # 원래 있던 것까지 잃으면 검증기가 없느니만 못하다.
     fact_verdicts = []
     fact_fixes = []          # 수정 요청 문장에 합칠 사실관계 수정안
+    try:
+        lines, fact_verdicts, fact_fixes = render_facts(draft, lines)
+    except Exception as e:
+        print("사실 확인 구간 실패: {}: {}".format(type(e).__name__, e))
+        lines += ["", "■ 사실 확인",
+                  "  이 단계에서 오류가 나 건너뛰었습니다 ({}).".format(
+                      type(e).__name__),
+                  "  위 두 항목은 정상입니다. 사실관계는 손으로 확인하세요."]
+
+    # 수정 요청 문장 — 기획안 대조와 사실 확인을 합쳐 한 번에 낸다.
+    # 사람이 이 한 덩어리를 그대로 답장하면 둘 다 반영된다.
+    fix_parts = [fix] if fix else []
+    fix_parts += fact_fixes
+    if fix_parts:
+        lines += ["", "■ 수정 요청 문장 (그대로 답장하면 반영됩니다)"]
+        lines += ["  " + p for p in fix_parts]
+
+    # 종합
+    all_verdicts = [v for _, v, _ in mech]
+    if sem:
+        all_verdicts += [i.get("verdict", "")
+                         for i in as_dicts(as_dict(sem).get("items"))]
+    all_verdicts += [v for v in fact_verdicts if v]
+    fails = all_verdicts.count("실패")
+    warns = all_verdicts.count("주의")
+    checks = all_verdicts.count("확인 필요")
+
+    lines += ["", "─────────────"]
+    if fails:
+        lines.append("실패 {}건, 주의 {}건 — 수정을 권합니다.".format(fails, warns))
+    elif warns:
+        lines.append("주의 {}건 — 확인 후 발행하세요.".format(warns))
+    elif checks:
+        # '확인 필요' 가 두 종류다. 자리표시자(형식)와 출처 미확인(사실).
+        # 뭉뚱그리면 "자리표시자만 채우면 됩니다" 가 거짓말이 된다.
+        fact_checks = fact_verdicts.count("확인 필요")
+        if fact_checks and fact_checks < checks:
+            lines.append("확인 필요 {}건 — 자리표시자 {}곳, 출처 미확인 {}건.".format(
+                checks, checks - fact_checks, fact_checks))
+        elif fact_checks:
+            lines.append("출처로 확인되지 않은 사실 {}건 — 확인 후 발행하세요.".format(
+                fact_checks))
+        else:
+            lines.append("형식은 통과. 자리표시자 {}곳만 채우면 됩니다.".format(checks))
+    elif FACTCHECK and not fact_verdicts:
+        # 사실 확인이 한 건도 판정을 못 냈다. '모두 통과' 는 과한 말이다.
+        lines.append("형식과 기획안 대조는 통과. "
+                     "사실 확인은 돌지 않았으니 손으로 확인하세요.")
+    else:
+        lines.append("모두 통과했습니다.")
+
+    emit(lines)
+
+
+def render_facts(draft, lines):
+    """사실 확인을 돌리고 리포트 줄을 보탠다.
+
+    반환 (줄목록, 판정목록, 수정안목록)
+    """
+    src, web, searched = check_facts(draft)
+    fact_verdicts = []
+    fact_fixes = []
     if src is not None or web is not None:
         lines += ["", "■ 사실 확인"]
 
     if src is not None:
-        claims = src.get("claims", [])
-        if not claims:
+        claims = as_dicts(as_dict(src).get("claims"))
+        if not claims and not isinstance(src, dict):
+            # JSON 은 읽혔는데 모양이 달랐다. 진단에 쓰라고 밝혀 둔다.
+            lines.append("  · 응답 모양이 달라 읽지 못했습니다 ({}).".format(
+                type(src).__name__))
+        elif not claims:
             lines.append("  · 가릴 수 있는 사실 주장이 없습니다.")
         for c in claims:
             v = c.get("verdict", "")
@@ -780,7 +910,7 @@ def main():
 
     if web is not None:
         lines.append("  ── 자료에 없어 웹에서 확인한 것 ──")
-        for r in web.get("results", []):
+        for r in as_dicts(as_dict(web).get("results")):
             v = r.get("verdict", "")
             fact_verdicts.append(FACT_VERDICT.get(v, ""))
             lines.append("  {} [{}] {} — {}".format(
@@ -793,48 +923,22 @@ def main():
                 if r.get("verdict") == "다름":
                     fact_fixes.append(r["suggest"])
 
-    # 수정 요청 문장 — 기획안 대조와 사실 확인을 합쳐 한 번에 낸다.
-    # 사람이 이 한 덩어리를 그대로 답장하면 둘 다 반영된다.
-    fix_parts = [fix] if fix else []
-    for item in fact_fixes:
-        fix_parts.append(item)
-    if fix_parts:
-        lines += ["", "■ 수정 요청 문장 (그대로 답장하면 반영됩니다)"]
-        lines += ["  " + p for p in fix_parts]
+    return lines, fact_verdicts, fact_fixes
 
-    # 종합
-    all_verdicts = [v for _, v, _ in mech]
-    if sem:
-        all_verdicts += [i.get("verdict", "") for i in sem.get("items", [])]
-    all_verdicts += [v for v in fact_verdicts if v]
-    fails = all_verdicts.count("실패")
-    warns = all_verdicts.count("주의")
-    checks = all_verdicts.count("확인 필요")
 
-    lines += ["", "─────────────"]
-    if fails:
-        lines.append("실패 {}건, 주의 {}건 — 수정을 권합니다.".format(fails, warns))
-    elif warns:
-        lines.append("주의 {}건 — 확인 후 발행하세요.".format(warns))
-    elif checks:
-        # '확인 필요' 가 두 종류다. 자리표시자(형식)와 출처 미확인(사실).
-        # 뭉뚱그리면 "자리표시자만 채우면 됩니다" 가 거짓말이 된다.
-        fact_checks = fact_verdicts.count("확인 필요")
-        if fact_checks and fact_checks < checks:
-            lines.append("확인 필요 {}건 — 자리표시자 {}곳, 출처 미확인 {}건.".format(
-                checks, checks - fact_checks, fact_checks))
-        elif fact_checks:
-            lines.append("출처로 확인되지 않은 사실 {}건 — 확인 후 발행하세요.".format(
-                fact_checks))
-        else:
-            lines.append("형식은 통과. 자리표시자 {}곳만 채우면 됩니다.".format(checks))
-    else:
-        lines.append("모두 통과했습니다.")
+def emit(lines):
+    """리포트를 파일로 남기고 텔레그램으로 보낸다.
 
+    발송이 main() 끝에만 있으면, 그 앞 어디서 터져도 리포트를
+    통째로 잃는다. 한 군데로 모아 두고 호출부를 감싼다.
+    """
     text = "\n".join(lines)
-    os.makedirs(STATE_DIR, exist_ok=True)
-    with open(REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write(text)
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(REPORT_FILE, "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as e:
+        print("리포트 저장 실패: " + str(e))
     print(text)
     send_telegram(text)
 
@@ -868,4 +972,22 @@ if __name__ == "__main__":
         ok = (asked == slots)
         print("판정:", "통과" if ok else "★어긋남★")
         raise SystemExit(0 if ok else 1)
-    main()
+
+    # 마지막 안전망.
+    # 2026-10-12 에 검증기가 예외로 멈췄는데 텔레그램에 아무것도
+    # 안 와서, 리포트가 안 온 것인지 돌지 않은 것인지 알 수 없었다.
+    # 침묵이 가장 나쁘다. 죽더라도 죽었다고 알린다.
+    try:
+        main()
+    except Exception as e:
+        msg = ("[초안 검증 리포트]\n\n"
+               "검증기가 오류로 멈췄습니다 — {}: {}\n\n"
+               "초안은 나왔지만 검증을 못 했습니다. "
+               "발행 전에 사실관계를 손으로 확인하세요.".format(
+                   type(e).__name__, e))
+        print(msg)
+        try:
+            send_telegram(msg)
+        except Exception:
+            pass
+        raise
