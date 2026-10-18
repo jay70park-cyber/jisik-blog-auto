@@ -639,18 +639,29 @@ def main():
         raise SystemExit(1)
 
     fresh = [m for m in meetings if m["schSn"] not in seen]
-    print("새 회의록 {}건".format(len(fresh)))
+    n_new = len(fresh)
+    print("새 회의록 {}건".format(n_new))
 
     again = pick_again(meetings, seen)
     if again:
         print("요약이 비어 있어 다시 보는 회의 {}건".format(len(again)))
     fresh = fresh + again
 
+    # 왜 안 알렸는지를 센다.
+    #
+    # 2026-10-17 에 회의록 3건이 새로 들어왔는데(누적 31→34, 마지막 회의
+    # 09-17→10-16) 알림은 "새 회의록 없음" 이었다. 셋 다 현안·개발어에
+    # 안 걸려 요약을 생략했기 때문인데, 그 사실이 어디에도 안 보였다.
+    # **수집이 멈춘 것과 걸릴 게 없는 것이 겉으로 똑같아진다.**
+    skipped = {"받기 실패": 0, "적중어 없음": 0, "개발어 미적중": 0,
+               "담을 논의 없음": 0}
+
     blocks = []
     for m in fresh:
         body = fetch(m["링크"])
         time.sleep(1)
         if not body:
+            skipped["받기 실패"] += 1
             continue
         text = body_only(strip_tags(body))
         issues, words = find_hits(text, agenda)
@@ -667,6 +678,7 @@ def main():
             mark, m["회의일"], m["회의명"], m["적중어"] or "없음"))
         if not words:
             m["요약"] = "없음"
+            skipped["적중어 없음"] += 1
             continue
 
         if not issues and not any(w in words for w in DEV_WORDS):
@@ -677,6 +689,7 @@ def main():
             # 나중에 조건을 더 넓히려면 이 칸을 비우면 다시 대상이 된다.
             print("     · 현안·개발어 미적중, 요약 생략")
             m["요약"] = "없음"
+            skipped["개발어 미적중"] += 1
             continue
 
         result = summarize(text, agenda, words)
@@ -711,6 +724,7 @@ def main():
         if not summary:
             print("     → 담을 논의 없음, 알리지 않음")
             m["요약"] = "없음"
+            skipped["담을 논의 없음"] += 1
             continue
 
         m["요약"] = " / ".join(summary)[:600]
@@ -744,14 +758,30 @@ def main():
         # 조용한 것과 워크플로가 죽은 것이 겉으로 똑같다.
         # 둘 다 아무것도 안 온다. 그러면 몇 주 멈춰 있어도 모른다.
         last = max((m.get("회의일", "") for m in meetings), default="")
-        lines = ["[화성시의회 회의록] " + today,
-                 "새 회의록 없음 · 누적 {}건 · 마지막 회의 {}".format(
-                     len(seen), last or "?")]
+        lines = ["[화성시의회 회의록] " + today]
+
+        # '받은 게 없다' 와 '받았는데 알릴 게 없다' 를 구분해서 적는다.
+        # 뭉뚱그리면 수집이 멈춘 날과 조용한 날이 똑같아 보인다.
+        why = ", ".join("{} {}건".format(k, v)
+                        for k, v in skipped.items() if v)
+        if n_new:
+            lines.append("새로 받은 회의록 {}건 · 알릴 내용 없음".format(n_new))
+            if why:
+                lines.append("  사유: " + why)
+        else:
+            lines.append("새 회의록 없음")
+        lines.append("누적 {}건 · 마지막 회의 {}".format(len(seen), last or "?"))
+
         # 요약을 못 만든 채 남아 있는 것이 있으면 조용히 쌓이지 않게 알린다
         pending = sum(1 for r in seen.values()
                       if not (r.get("요약") or "").strip())
         if pending:
             lines.append("요약 대기 {}건".format(pending))
+
+        # 받기 자체가 실패한 것은 조용한 날이 아니라 고장이다
+        if skipped["받기 실패"]:
+            lines.append("⚠ 본문을 못 받은 회의 {}건 — 사이트 구조나 "
+                         "접속을 확인하세요".format(skipped["받기 실패"]))
         text = "\n".join(lines)
         print(text)
         send_telegram(text)
