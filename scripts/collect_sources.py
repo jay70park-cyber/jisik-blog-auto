@@ -83,7 +83,6 @@ LOCAL_FALLBACK_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 �
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
 
 # 시험 실행. 안건을 소모하지 않고 발행 기록도 남기지 않는다.
-# 지도·서식을 고치고 결과만 보고 싶을 때 쓴다.
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
 PLAN_CSV = os.path.join("data", "plan_projects.csv")
@@ -223,39 +222,16 @@ def parse_rss_date(s):
 # ─────────────────────────────────────────────
 
 def next_rotation_index():
-    """월요일마다 1씩 증가하는 카운터. 다음 카테고리로 넘어가게 한다.
-
-    **하루에 한 번만 전진한다.** 예전에는 부를 때마다 전진해서,
-    초안이 실패해 다시 돌릴 때마다 카테고리가 하나씩 건너뛰어졌다
-    (2026-10-19: 본문 생성이 빈 응답으로 끝나 여러 번 재실행했더니
-    3개 순환이 몇 바퀴를 돌았다).
-
-    파일 형식은 "다음인덱스,YYYY-MM-DD". 날짜가 없는 옛 형식도 읽는다.
-    """
-    idx, last = 0, ""
+    """월요일마다 1씩 증가하는 카운터. 다음 카테고리로 넘어가게 한다."""
+    idx = 0
     if os.path.exists(ROTATION_STATE_FILE):
         with open(ROTATION_STATE_FILE, "r", encoding="utf-8") as f:
             content = f.read().strip()
-        if content:
-            parts = content.split(",")
-            try:
-                idx = int(parts[0].strip())
-            except ValueError:
-                idx = 0
-            last = parts[1].strip() if len(parts) > 1 else ""
+            idx = int(content) if content else 0
     idx = idx % len(ROTATION)
-
-    today = today_kst().isoformat()
-    if last == today:
-        # 오늘 이미 전진했다. 같은 카테고리를 그대로 쓴다.
-        same = (idx - 1) % len(ROTATION)
-        print("오늘 이미 순환했습니다 — 같은 카테고리({})로 갑니다."
-              .format(ROTATION[same]))
-        return same
-
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(ROTATION_STATE_FILE, "w", encoding="utf-8") as f:
-        f.write("{},{}".format((idx + 1) % len(ROTATION), today))
+        f.write(str((idx + 1) % len(ROTATION)))
     return idx
 
 
@@ -740,8 +716,8 @@ def pick_keyword(rows, category):
         fresh = pool
 
     # 이름만 다르고 주제가 같은 키워드를 거른다.
-    # 세금_정책 후보 6개 중 2개가 취득세라, 쿨다운이 하나를 빼도
-    # 나머지 하나가 뽑혀 '또 취득세' 가 됐다 (2026-10-19).
+    # 세금_정책 후보 6개 중 2개가 취득세라, 쿨다운이 글자가 같은 하나를
+    # 빼도 나머지 하나가 뽑혀 '또 취득세' 가 된다 (2026-10-19).
     used = set()
     for k in recent:
         used |= core_words(k)
