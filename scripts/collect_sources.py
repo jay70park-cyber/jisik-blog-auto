@@ -81,6 +81,7 @@ COUNCIL_KEYWORDS = ["화성시의회", "화성시 예산", "동탄 개발 현안
 LOCAL_FALLBACK_KEYWORDS = ["동탄 개발 호재", "동탄 반도체", "동탄 교통 개발"]
 
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
+
 # 시험 실행. 안건을 소모하지 않고 발행 기록도 남기지 않는다.
 # 지도·서식을 고치고 결과만 보고 싶을 때 쓴다.
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
@@ -222,16 +223,39 @@ def parse_rss_date(s):
 # ─────────────────────────────────────────────
 
 def next_rotation_index():
-    """월요일마다 1씩 증가하는 카운터. 다음 카테고리로 넘어가게 한다."""
-    idx = 0
+    """월요일마다 1씩 증가하는 카운터. 다음 카테고리로 넘어가게 한다.
+
+    **하루에 한 번만 전진한다.** 예전에는 부를 때마다 전진해서,
+    초안이 실패해 다시 돌릴 때마다 카테고리가 하나씩 건너뛰어졌다
+    (2026-10-19: 본문 생성이 빈 응답으로 끝나 여러 번 재실행했더니
+    3개 순환이 몇 바퀴를 돌았다).
+
+    파일 형식은 "다음인덱스,YYYY-MM-DD". 날짜가 없는 옛 형식도 읽는다.
+    """
+    idx, last = 0, ""
     if os.path.exists(ROTATION_STATE_FILE):
         with open(ROTATION_STATE_FILE, "r", encoding="utf-8") as f:
             content = f.read().strip()
-            idx = int(content) if content else 0
+        if content:
+            parts = content.split(",")
+            try:
+                idx = int(parts[0].strip())
+            except ValueError:
+                idx = 0
+            last = parts[1].strip() if len(parts) > 1 else ""
     idx = idx % len(ROTATION)
+
+    today = today_kst().isoformat()
+    if last == today:
+        # 오늘 이미 전진했다. 같은 카테고리를 그대로 쓴다.
+        same = (idx - 1) % len(ROTATION)
+        print("오늘 이미 순환했습니다 — 같은 카테고리({})로 갑니다."
+              .format(ROTATION[same]))
+        return same
+
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(ROTATION_STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(str((idx + 1) % len(ROTATION)))
+        f.write("{},{}".format((idx + 1) % len(ROTATION), today))
     return idx
 
 
@@ -684,6 +708,20 @@ def remember_keyword(category, keyword, keep=8):
         json.dump(hist, f, ensure_ascii=False, indent=2)
 
 
+# 키워드마다 붙는 공통어. 알맹이를 가릴 때 빼고 본다.
+COMMON_WORDS = {"지식산업센터", "지산", "아파트형공장", "동탄"}
+
+
+def core_words(keyword):
+    """키워드에서 공통어를 뺀 알맹이 낱말 묶음.
+
+    "지식산업센터 취득세 감면" -> {취득세, 감면}
+    "동탄 지식산업센터 취득세"   -> {취득세}
+    둘은 알맹이가 겹치므로 사실상 같은 주제다.
+    """
+    return {w for w in str(keyword).split() if w not in COMMON_WORDS}
+
+
 def pick_keyword(rows, category):
     """점수 상위 풀에서 최근 쓴 것을 뺀 뒤 1위를 고른다.
 
@@ -700,6 +738,18 @@ def pick_keyword(rows, category):
     fresh = [r for r in pool if r["keyword"] not in recent]
     if not fresh:          # 풀이 쿨다운보다 작으면 다 빠질 수 있다
         fresh = pool
+
+    # 이름만 다르고 주제가 같은 키워드를 거른다.
+    # 세금_정책 후보 6개 중 2개가 취득세라, 쿨다운이 하나를 빼도
+    # 나머지 하나가 뽑혀 '또 취득세' 가 됐다 (2026-10-19).
+    used = set()
+    for k in recent:
+        used |= core_words(k)
+    if used:
+        other = [r for r in fresh if not (core_words(r["keyword"]) & used)]
+        if other:          # 다 겹치면 어쩔 수 없이 원래대로 간다
+            fresh = other
+
     return fresh[0], pool, recent
 
 
@@ -711,6 +761,7 @@ def main():
 
     agenda = None
     skip_log = []
+
     if track == "local":
         # 소재를 키워드가 아니라 현안에서 고른다.
         # 키워드 점수로 고르면 같은 키워드가 계속 1등이라 소재가 고착된다.
@@ -772,6 +823,8 @@ def main():
         }
         if DRY_RUN:
             print("시험 실행 — 안건 순서와 발행 기록을 건드리지 않습니다.")
+            print("  현재 포인터: {} / 이번 선정: {}".format(
+                read_last_agenda_id() or "(비어 있음)", agenda["id"]))
         else:
             write_last_agenda_id(agenda["id"])
             mark_published(agenda["id"])
