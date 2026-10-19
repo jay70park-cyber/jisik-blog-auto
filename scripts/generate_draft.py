@@ -35,6 +35,13 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 MODEL = "claude-sonnet-5"
 
+# 웹 검색과 사고가 출력 한도를 통째로 먹으면 본문이 0자로 나온다.
+# 2026-10-19: 검색 10회 + 사고 8블록으로 16,000 을 다 쓰고
+# text 블록이 아예 없었다. 검색 횟수를 묶고 한도를 올린다.
+SEARCH_MAX_USES = 5
+DRAFT_MAX_TOKENS = 24000
+DRAFT_RETRY_TOKENS = 32000
+
 # 물건 종류를 가르는 낱말. 긴 것을 먼저 두는 것이 중요하다.
 # "상가주택" 에는 "상가" 가 들어 있고 "오피스텔" 에는 "오피스" 가 들어 있어서,
 # 짧은 쪽이 앞에 오면 상가주택 글이 상가 글로 잡힌다.
@@ -137,18 +144,26 @@ def fetch_reference_links(keyword, count=6, timeout=15):
     print("참고 링크: {}건 채택, {}건 제외".format(len(out), dropped))
     return out[:3]
 
-def call_claude_with_search(prompt, timeout=480):
-    """웹 검색 도구를 활성화해 Claude API를 호출한다."""
+def call_claude_with_search(prompt, timeout=480,
+                            max_tokens=DRAFT_MAX_TOKENS,
+                            search=True, max_uses=SEARCH_MAX_USES):
+    """Claude API를 호출한다. search=False 면 웹 검색을 끈다.
+
+    검색 결과는 본문과 같은 출력 한도를 쓴다. 검색이 많이 돌면
+    본문 쓸 자리가 안 남아 text 블록이 통째로 안 나온다.
+    그래서 횟수를 max_uses 로 묶고, 그래도 비면 검색을 끄고 다시 쓴다.
+    """
     url = "https://api.anthropic.com/v1/messages"
-    body = json.dumps(
-        {
-            "model": MODEL,
-            "max_tokens": 16000,
-            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
+    payload = {
+        "model": MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if search:
+        payload["tools"] = [{"type": "web_search_20250305",
+                             "name": "web_search",
+                             "max_uses": max_uses}]
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,
@@ -1178,6 +1193,17 @@ def main():
     prompt = build_prompt(result, refs, today, plan=plan, category=track)
 
     draft = call_claude_with_search(prompt)
+
+    if not draft or not draft.strip():
+        # 검색과 사고가 출력 한도를 다 먹어 본문이 0자인 경우다.
+        # 검색을 끄고 한 번 더 쓴다. 고시·재정계획·뉴스는 이미
+        # 프롬프트에 들어 있어 검색 없이도 글은 나온다.
+        print("빈 응답 — 검색을 끄고 한 번 더 시도합니다.")
+        send_telegram_message(
+            "초안이 비어 나와 검색 없이 다시 씁니다. "
+            "근거 링크가 평소보다 적을 수 있으니 발행 전에 확인하세요.")
+        draft = call_claude_with_search(
+            prompt, max_tokens=DRAFT_RETRY_TOKENS, search=False)
 
     if not draft or not draft.strip():
         msg = "초안 생성에 실패했습니다(빈 응답). Claude 응답이 비어 있어 전송을 중단합니다."
