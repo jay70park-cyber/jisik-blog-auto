@@ -176,6 +176,30 @@ def naver_trend_ratio(keyword, start, end, timeout=15):
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
 
 
+# 이 블로그는 동탄·화성 지역 블로그다. 지역이 안 걸린 기사는
+# 아무리 많아도 이 현안의 재료가 아니다.
+#
+# 2026-10-22: A002 고려대병원 키워드에 '고려대' 가 한 낱말로 들어 있어
+# 대학 발전기금·연구성과 기사가 90건 잡혔고, 그 90건이 진전 판정과
+# 재료 하한선(MIN_MATERIAL=2)을 통째로 뚫었다. 세기만 하고 무엇을
+# 세는지 안 봤다. 9월에 A007 이 '공동주택' 으로 승강기 교체 고시를
+# 끌어온 것과 같은 함정이다.
+REGION_WORDS = ("동탄", "화성", "병점", "오산", "용인", "수원", "기흥")
+
+
+def news_is_ours(title, row):
+    """뉴스 제목이 이 현안의 것인가.
+
+    제목에 지역이 들어 있거나, 현안명이 통째로 들어 있으면 센다.
+    둘 다 아니면 같은 낱말이 우연히 걸린 것으로 본다.
+    """
+    t = str(title)
+    if any(w in t for w in REGION_WORDS):
+        return True
+    name = (row.get("현안명") or "").strip()
+    return bool(name) and len(name) >= 3 and name in t
+
+
 def google_news_items(query, days=NEWS_DAYS, timeout=20):
     """최근 days일 안의 구글 뉴스 항목 [(날짜, 제목)]을 돌려준다."""
     url = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
@@ -317,8 +341,19 @@ def check_freshness(row):
         if t not in seen:
             seen.add(t)
             uniq.append((d, t))
-    if uniq:
-        return True, "최근 {}일 뉴스 {}건".format(NEWS_DAYS, len(uniq)), uniq
+
+    # 지역이 안 걸린 기사는 뺀다. 넓은 키워드가 끌어온 남의 기사다.
+    ours = [(d, t) for d, t in uniq if news_is_ours(t, row)]
+    dropped = len(uniq) - len(ours)
+    if dropped:
+        print("  뉴스 {}건 중 {}건은 지역 무관으로 제외 ({} 기준)".format(
+            len(uniq), dropped, "·".join(REGION_WORDS[:3]) + " 등"))
+        if not ours:
+            print("  ※ 키워드가 너무 넓을 수 있습니다 — local_agenda.csv "
+                  "의 '{}' 키워드를 확인하세요".format(aid))
+
+    if ours:
+        return True, "최근 {}일 뉴스 {}건".format(NEWS_DAYS, len(ours)), ours
 
     return False, "진전 없음 (최근진전일 {}일 전, 뉴스 0건)".format(
         prog if prog is not None else "?"), []
