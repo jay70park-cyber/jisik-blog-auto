@@ -297,8 +297,32 @@ def load_agenda():
     return out
 
 
-def match_agenda(title, agenda):
-    return [name for name, words in agenda if any(w in title for w in words)]
+def match_agenda(title, agenda, dongtan=None):
+    """제목에 걸린 현안 이름을 돌려준다.
+
+    **현안명에 '동탄' 이 박혀 있으면 동탄 고시만 연결한다.**
+    키워드만 보면 '주택건설사업계획' 하나로 남양뉴타운 고시가
+    '동탄 주택공급' 현안에 붙고, update_agenda() 가 그것으로
+    최근진전일을 덮어쓴다. 현안이 통째로 어긋난다 (2026-10-22 확인).
+
+    바로 아래에서 동탄관련 열을 계산해 두고도 연결에는 안 쓰고 있었다.
+    소재 수집 쪽 collect_sources.load_notices() 는 같은 필터를 이미
+    쓰고 있었는데 여기만 빠져 있었다.
+
+    '동탄' 만 본다. DONGTAN_WORDS 전체로 넓히면 A006(용인 남사~화성
+    **신동** 연결도로)처럼 현안명에 법정동이 든 건이 용인 쪽 고시를
+    놓친다.
+    """
+    if dongtan is None:
+        dongtan = is_dongtan(title)
+    out = []
+    for name, words in agenda:
+        if not any(w in title for w in words):
+            continue
+        if "동탄" in name and not dongtan:
+            continue
+        out.append(name)
+    return out
 
 
 def update_agenda(new_rows):
@@ -328,6 +352,15 @@ def update_agenda(new_rows):
             continue
 
         stage, doubt = guess_stage(latest["제목"], row.get("단계") or "")
+
+        # 현안명 낱말이 제목에 하나도 없으면 다른 사업일 수 있다.
+        # 갱신은 하되 숨기지 않는다 — 표기가 달라서 안 걸리는 경우도
+        # 있어 막아버리면 멀쩡한 진전을 놓친다.
+        # 2026-10-22: 'GTX-A' 현안에 「수도권광역급행철도 C노선」 공고가
+        # 붙어 최근진전일이 10-16 으로 바뀌었다.
+        key_words = [w for w in name.split() if len(w) >= 2]
+        if key_words and not any(w in latest["제목"] for w in key_words):
+            doubt = (doubt + " · " if doubt else "") + "현안명 불일치"
         row["단계"] = stage or (row.get("단계") or "")
         row["최근진전일"] = latest["공고일자"]
         row["진전내용"] = latest["제목"][:80]
@@ -359,22 +392,54 @@ def save_all(merged):
                            key=lambda r: r.get("공고일자", ""), reverse=True))
 
 
+# sendMessage 한 통의 한도는 4,096자. 넘기면 400 이 난다.
+# 이 알림은 고시를 최대 15건 + 링크까지 싣는다. 쉽게 넘긴다.
+# 2026-10-12 에 검증 리포트가 4,378자로 통째로 안 간 적이 있다.
+TELEGRAM_LIMIT = 3900
+
+
+def split_for_telegram(text, limit=TELEGRAM_LIMIT):
+    """줄 단위로 끊어 limit 이하 조각으로 나눈다. 줄 가운데는 안 끊는다."""
+    out, buf = [], ""
+    for line in str(text).split("\n"):
+        while len(line) > limit:
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(line[:limit])
+            line = line[limit:]
+        if buf and len(buf) + 1 + len(line) > limit:
+            out.append(buf)
+            buf = line
+        else:
+            buf = (buf + "\n" + line) if buf else line
+    if buf:
+        out.append(buf)
+    return out or [""]
+
+
 def send_telegram(text, timeout=20):
+    """길면 나눠 보낸다. 한 조각이 실패해도 나머지는 계속 보낸다."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
-    body = urllib.parse.urlencode({
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "disable_web_page_preview": "true",
-    }).encode("utf-8")
-    try:
-        with urllib.request.urlopen(
-                urllib.request.Request(url, data=body, method="POST"),
-                timeout=timeout) as res:
-            res.read()
-    except Exception as e:
-        print("텔레그램 전송 오류: " + str(e))
+    parts = split_for_telegram(text)
+    total = len(parts)
+    for i, part in enumerate(parts, 1):
+        msg = part if total == 1 else "({}/{})\n{}".format(i, total, part)
+        body = urllib.parse.urlencode({
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg,
+            "disable_web_page_preview": "true",
+        }).encode("utf-8")
+        try:
+            with urllib.request.urlopen(
+                    urllib.request.Request(url, data=body, method="POST"),
+                    timeout=timeout) as res:
+                res.read()
+        except Exception as e:
+            print("텔레그램 전송 오류 ({}/{}, {}자): {}".format(
+                i, total, len(msg), e))
 
 
 def diagnose(page_html):
