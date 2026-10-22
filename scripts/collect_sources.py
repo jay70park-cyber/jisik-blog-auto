@@ -374,6 +374,24 @@ def count_material(row, news=None):
     return len(uniq) + len(load_plans(row)) + len(news or [])
 
 
+def odd_materials(row, titles):
+    """현안명 낱말이 하나도 없는 재료를 골라낸다.
+
+    키워드가 넓으면 남의 사업이 재료로 들어온다. 걸러내지는 않는다
+    — 제목 표기가 달라서 안 걸리는 경우도 있어 지우면 손해다.
+    대신 눈에 띄게 적어 사람이 보고 판단하게 한다.
+
+    2026-10-22: A004 GTX-A 가 키워드 'GTX|광역급행' 으로
+    「수도권광역급행철도 C노선」 공고를 물어왔고, 그 공고가
+    최근진전일까지 만들어 '6일 전 진전' 으로 둔갑했다.
+    GTX-B 분담금도 재정계획에 섞여 들어왔다.
+    """
+    words = [w for w in (row.get("현안명") or "").split() if len(w) >= 2]
+    if not words:
+        return []
+    return [t for t in titles if not any(w in str(t) for w in words)]
+
+
 def pick_agenda():
     """마지막으로 다룬 안건 다음부터 돌며, 진전이 있고 재료가 있는 첫 안건.
 
@@ -871,6 +889,16 @@ def main():
             lines.append("최근 뉴스")
             for n in a["최근뉴스"][:5]:
                 lines.append("  " + n["date"] + " " + n["title"][:50])
+        odd = odd_materials(agenda,
+                            [n["title"] for n in a["관련고시"]]
+                            + [p["사업명"] for p in a.get("관련계획", [])])
+        if odd:
+            lines.append("")
+            lines.append("⚠ 현안명과 안 맞는 재료 {}건 — 키워드를 확인하세요"
+                         .format(len(odd)))
+            for t in odd[:4]:
+                lines.append("  ? " + str(t)[:50])
+
         if skip_log:
             lines.append("")
             lines.append("순환 판정")
