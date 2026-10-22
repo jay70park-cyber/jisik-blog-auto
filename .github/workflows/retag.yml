@@ -1,0 +1,62 @@
+name: 고시 현안 재태깅
+
+# 누적 고시의 `현안` 열을 지금 키워드로 다시 붙인다.
+#
+# 기본은 미리보기다. 아무것도 바꾸지 않는다.
+# 실제로 고치려면 apply 칸에 yes 를 넣는다.
+#
+# 키워드를 고친 뒤 한 번씩 돌린다. 본체는 새로 올라온 고시만
+# 태그하므로 과거분은 이 워크플로로만 다시 붙일 수 있다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "실제로 고칠 때만 yes (비우면 미리보기)"
+        default: ''
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 재태깅
+        run: |
+          if [ "${{ github.event.inputs.apply }}" = "yes" ]; then
+            python3 -B scripts/retag_notices.py --apply
+          else
+            python3 -B scripts/retag_notices.py
+          fi
+
+      - name: 미리보기였으면 변경이 없어야 한다
+        if: ${{ github.event.inputs.apply != 'yes' }}
+        run: |
+          DIRTY=$(git status --porcelain --untracked-files=no)
+          if [ -n "$DIRTY" ]; then
+            echo "::error::미리보기인데 파일이 바뀌었습니다"
+            echo "$DIRTY"
+            exit 1
+          fi
+          echo "변경 없음 — 읽기만 했습니다"
+
+      - name: 커밋
+        if: ${{ github.event.inputs.apply == 'yes' }}
+        run: |
+          if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "바뀐 것이 없어 커밋하지 않습니다"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/hscity_notices.csv
+          git commit -m "고시 현안 열 재태깅 (키워드 변경 반영)"
+          git push
