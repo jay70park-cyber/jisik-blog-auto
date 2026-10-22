@@ -1,0 +1,36 @@
+name: 현안 연결 점검
+
+# 읽기만 한다. 고시도 현안도 바꾸지 않는다.
+# 키워드나 지역 필터를 고친 뒤, 기존 고시가 어느 현안에 붙는지
+# 확인할 때 쓴다. 본체(collect_hscity)는 새로 올라온 고시만
+# 현안에 연결하므로 기존 것은 이 워크플로로만 다시 볼 수 있다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      agenda:
+        description: '한 현안만 볼 때 id 또는 현안명 (비우면 전체)'
+        default: ''
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 점검
+        run: python3 scripts/check_agenda_match.py "${{ github.event.inputs.agenda }}"
+
+      - name: 변경 여부 확인
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::읽기 전용이어야 하는데 파일이 바뀌었습니다"
+            git status --porcelain
+            exit 1
+          fi
+          echo "파일 변경 없음 — 읽기만 했습니다"
