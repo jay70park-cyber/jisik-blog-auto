@@ -26,8 +26,46 @@ NOTICE_CSV = os.path.join("data", "hscity_notices.csv")
 AGENDA_CSV = os.path.join("data", "local_agenda.csv")
 
 
+def grep_notices(word):
+    """낱말이 든 고시를 모두 훑어 보여준다. 현안과 무관하게 본다.
+
+    현안의 범위를 새로 짤 때 쓴다. 지도나 기억으로 후보를 고르면
+    **화성시가 실제로 고시를 내지 않는 것**을 넣게 된다. 범위는
+    누적 고시에서 뽑아야 한다 (2026-10-24 A009 에서 겪음).
+
+    쓰는 법
+        python3 scripts/check_agenda_match.py --grep 일반산업단지
+    """
+    with io.open(NOTICE_CSV, encoding="utf-8-sig", newline="") as f:
+        rows = [r for r in csv.DictReader(f)
+                if word in (r.get("제목") or "")]
+    print("'{}' 가 든 고시 {}건".format(word, len(rows)))
+    print()
+    for r in sorted(rows, key=lambda x: x.get("공고일자", ""), reverse=True):
+        print("  {} {}".format(r.get("공고일자", ""),
+                               (r.get("제목") or "")[:62]))
+        tag = (r.get("현안") or "").strip()
+        dt = (r.get("동탄관련") or "").strip()
+        if tag or dt:
+            print("      {}{}".format("★동탄권 " if dt == "O" else "",
+                                      tag or "(현안 없음)"))
+    print()
+    print("※ 읽기만 했습니다. 아무것도 바꾸지 않았습니다.")
+    return 0
+
+
 def main():
-    want = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+    args = sys.argv[1:]
+    if args and args[0] == "--grep":
+        if len(args) < 2 or not args[1].strip():
+            print("찾을 낱말을 주세요:  --grep 일반산업단지")
+            return 1
+        if not os.path.exists(NOTICE_CSV):
+            print("데이터 파일이 없습니다. 저장소 뿌리에서 실행하세요.")
+            return 1
+        return grep_notices(args[1].strip())
+
+    want = args[0].strip() if args else ""
 
     if not os.path.exists(NOTICE_CSV) or not os.path.exists(AGENDA_CSV):
         print("데이터 파일이 없습니다. data/ 아래에서 실행하세요.")
