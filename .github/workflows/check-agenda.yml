@@ -11,6 +11,9 @@ on:
       agenda:
         description: '한 현안만 볼 때 id 또는 현안명 (비우면 전체)'
         default: ''
+      grep:
+        description: "낱말이 든 고시를 모두 볼 때 (예: 일반산업단지). 넣으면 이것만 한다"
+        default: ''
 
 # 파이썬이 import 할 때 __pycache__ 를 만든다. 데이터 변경이 아닌데
 # 읽기 전용 확인에 걸린다. 아예 안 만들게 한다.
@@ -29,7 +32,12 @@ jobs:
           python-version: '3.11'
 
       - name: 점검
-        run: python3 -B scripts/check_agenda_match.py "${{ github.event.inputs.agenda }}"
+        run: |
+          if [ -n "${{ github.event.inputs.grep }}" ]; then
+            python3 -B scripts/check_agenda_match.py --grep "${{ github.event.inputs.grep }}"
+          else
+            python3 -B scripts/check_agenda_match.py "${{ github.event.inputs.agenda }}"
+          fi
 
       - name: 데이터가 안 바뀌었는지
         run: |
