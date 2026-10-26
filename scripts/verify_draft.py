@@ -337,7 +337,11 @@ def check_mechanical(draft, plan):
     if srcs:
         out.extend(check_recency(draft, srcs))
     else:
-        out.append(("기사 나이", "통과", "외부 기사 근거 없음 — 판정 대상 아님"))
+        # 아래 의미 검사 8번은 '본문에 출처 링크가 있는가' 를 따로 본다.
+        # 이 줄이 '근거 없음' 으로 읽히면 두 항목이 모순처럼 보인다.
+        # 여기서 보는 것은 수집 자료에 기사 날짜가 있느냐뿐이다.
+        out.append(("기사 나이", "통과",
+                    "수집 자료에 기사 날짜 없음 — 나이 판정 대상 아님"))
 
     return out
 
@@ -389,6 +393,14 @@ def build_verify_prompt(plan, draft):
    실제 항목 수가 같아야 합니다.
    이 항목은 **일치 여부만** 본다. 기준이 올바른지는 11번에서 따로
    판정하므로, 여기서 '통과' 가 기준이 타당하다는 뜻은 아니다.
+   **다만 초안이 기획을 바로잡은 경우는 가려내라.** 기획의 수치가
+   틀렸고 초안이 올바른 값으로 바꿨다면 그것은 어긋남이 아니다.
+   그때는 '주의' 로 하고 note 에 **기획 쪽이 틀렸다**고 적어라.
+   '실패' 는 초안이 틀린 쪽으로 바꿨을 때만 쓴다.
+   (2026-10-26: 기획이 지식산업센터에 주택 기준 RTI 1.25배를 적었고
+    초안이 비주택 1.5배로 바로잡았는데 이 항목이 '실패' 를 냈다.
+    그 바람에 수정 요청이 초안을 1.25배로 되돌리라고 했다.
+    틀린 쪽으로 고치라는 지시였다)
 
 5. 문단별 정합성 — 각 섹션이 기획안의 흐름에 맞게 배치되었는가.
    기획과 무관한 곳으로 새는 문단이 있는가.
@@ -470,7 +482,7 @@ def build_verify_prompt(plan, draft):
     {{"name": "사건의 시제와 인과", "verdict": "...", "note": "..."}}
   ],
   "worst": "가장 시급하게 고쳐야 할 것 한 문장. 문제가 없으면 빈 문자열",
-  "fix_request": "수정 요청으로 그대로 보낼 수 있는 문장. 문제가 없으면 빈 문자열"
+  "fix_request": "수정 요청으로 그대로 보낼 수 있는 문장. 문제가 없으면 빈 문자열. **기획이 틀린 대목은 초안을 되돌리라고 쓰지 말 것.** 그 자리에는 기획이 틀렸으니 초안을 그대로 두라고 쓸 것"
 }}""".format(
         today=today_kst().strftime("%Y년 %m월 %d일"),
         reader=plan.get("reader", "-"),
@@ -552,20 +564,46 @@ def load_material(limit=MATERIAL_LIMIT):
     구조가 트랙마다 다르므로 agenda 가 있으면 그것을, 없으면 전체를
     쓴다. 모양이 바뀌어도 깨지지 않게 통째로 넘긴다.
     """
+    # 2026-10-26: 여기서 collection_result.json 만 읽었다. 그런데
+    # generate_draft 는 data/analysis_summary.txt(실거래)와
+    # data/auction_summary.txt(경매)도 프롬프트에 넣는다.
+    # 검증기가 그 파일들을 안 보니 초안이 거기서 옮겨 적은 숫자가
+    # 전부 '자료에없음' 으로 찍혔다. 실거래 표 네 줄이 통째로
+    # '확인 필요' 가 되어, 진짜 출처 없는 대목이 그 속에 묻혔다.
+    # 초안이 본 것을 검증기도 봐야 대조가 성립한다.
+    extra = []
+    for name, label in (("analysis_summary.txt", "실거래 분석 요약"),
+                        ("auction_summary.txt", "경매 낙찰 요약")):
+        p = os.path.join("data", name)
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                t = f.read().strip()
+            if t:
+                extra.append("[{}  (data/{})]\n{}".format(label, name, t))
+        except Exception as e:
+            print("{} 를 읽지 못했습니다: {}".format(name, e))
+
     path = os.path.join(STATE_DIR, "collection_result.json")
     if not os.path.exists(path):
-        return ""
+        return ("\n\n".join(extra))[:limit]
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         print("자료를 읽지 못했습니다: " + str(e))
-        return ""
+        return ("\n\n".join(extra))[:limit]
     node = data.get("agenda") if isinstance(data, dict) and data.get("agenda") else data
     try:
         text = json.dumps(node, ensure_ascii=False, indent=2)
     except Exception:
         text = str(node)
+
+    # 수집 결과를 먼저, 실거래·경매 요약을 뒤에 붙인다.
+    # 잘릴 때 수집 결과(그날의 소재)가 먼저 살아남게 한다.
+    if extra:
+        text = text + "\n\n" + "\n\n".join(extra)
     if len(text) > limit:
         text = text[:limit] + "\n(이하 생략)"
     return text
