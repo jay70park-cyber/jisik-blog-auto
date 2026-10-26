@@ -253,7 +253,9 @@ def save_history(plan, result):
         "reader": plan.get("reader", ""),
         "output_type": plan.get("output_type", ""),
         "conclusion": plan.get("conclusion", ""),
-        "criteria": plan.get("criteria", [])[:3],
+        "criteria": plan.get("criteria", [])[:4],
+        # 2026-10-26: 가제를 이력에 안 남겨서 제목 틀 반복을 못 잡았다.
+        "title": plan.get("title_draft", ""),
     })
     plans = plans[-HISTORY_KEEP:]
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -272,6 +274,8 @@ def format_history(plans):
         lines.append("- {} {} | 독자: {} | 산출물: {}".format(
             p.get("date", ""), p.get("keyword", ""),
             p.get("reader", ""), p.get("output_type", "")[:12]))
+        if p.get("title"):
+            lines.append("    가제: " + p["title"])
         if crit:
             lines.append("    판단기준: " + crit)
     lines += [
@@ -282,6 +286,10 @@ def format_history(plans):
         "- 최근 3회에 쓴 산출물 유형도 피하세요.",
         "- 판단 기준에 이미 쓴 항목(전용률, 입주업종 등)을 그대로 반복하지 마세요.",
         "  같은 주제라도 이번 키워드에서만 나올 수 있는 기준을 찾으세요.",
+        "- **위 가제들과 같은 뼈대로 가제를 짓지 마세요.** 주제가 달라도",
+        "  제목의 모양이 같으면 독자에게는 같은 글로 보입니다.",
+        "  '~ 계약 전 확인할 N가지', '~ 체크 N가지', '~ 판단기준표' 처럼",
+        "  앞말만 갈아끼우면 되는 틀이 특히 그렇습니다.",
         "",
     ]
     return "\n".join(lines)
@@ -487,7 +495,8 @@ def build_plan_prompt(result, feedback=None, previous=None):
    - "무엇이 어떻게 달라졌다"는 사실 서술이어야 합니다.
    - "그래서 독자는 무엇을 해야 한다", "확인해야 한다", "주의해야 한다"로
      쓰지 마세요. 이 글은 경고문이 아닙니다."""
-        rule_4 = """4. 이 글에서 짚을 사실 3가지를 만듭니다.
+        rule_4 = """4. 이 글에서 짚을 사실을 만듭니다. **2~4개 중 내용에 맞게 정하세요.**
+   - 세 개로 맞추려고 약한 항목을 끼워 넣지 마세요. 두 개면 두 개입니다.
    - 각 항목은 한 문장. 확인된 사실이어야 하고 추측이면 그렇다고 밝히세요.
    - 숫자와 일정이 들어가면 좋습니다.
    - 판단 기준이나 체크리스트 형태로 쓰지 마세요.
@@ -495,7 +504,9 @@ def build_plan_prompt(result, feedback=None, previous=None):
 이 글은 판단 기준을 만들지 않습니다. 다만 숫자를 다루는 규칙은
 따로 적어 둔 [판단 기준] 을 따르세요.
 출처, 표본, 확인 경로에 관한 대목을 그대로 지키세요."""
-        field_4 = '"criteria": ["짚을 사실 1", "짚을 사실 2", "짚을 사실 3"],'
+        # JSON 보기에 주석을 달면 모델이 따라 적어 파싱이 깨진다.
+        # 가짓수 안내는 위 rule_4 에만 둔다.
+        field_4 = '"criteria": ["짚을 사실 1", "짚을 사실 2", "..."],'
         calc_note = '   - 이 트랙은 대개 "없음"이 맞습니다.'
     else:
         rule_2 = """2. 이 글이 독자에게 남길 '산출물'을 아래 중 하나로 정합니다.
@@ -503,17 +514,23 @@ def build_plan_prompt(result, feedback=None, previous=None):
    - 단순한 정보 요약이나 뉴스 해설은 산출물이 아닙니다.
      독자가 자기 물건에 대입해 답을 낼 수 있어야 합니다.""".format(types=output_types)
         rule_3 = """3. 핵심 결론을 한 문장으로 씁니다.
-   "무엇이 일어났다"가 아니라 "그래서 독자는 무엇을 해야 한다"의 형태여야 합니다."""
+   "무엇이 일어났다"가 아니라 "그래서 독자는 무엇을 해야 한다"의 형태여야 합니다.
+   - 다만 **"해야 한다"가 늘 "계약 전에 확인하라"일 필요는 없습니다.**
+     최근 글이 계속 계약 직전만 겨냥했다면 이번에는 다른 시점을 잡으세요.
+     매물을 추리는 단계, 임차인을 들이는 단계, 보유 중에 생기는 문제,
+     비우거나 파는 단계 — 독자의 1년은 계약일 하루가 아닙니다."""
         # 이 자리에는 '"전용률 50% 미만이면 실사용에 부적합" 같은 사실 기반의
         # 확인 기준은 좋습니다' 가 있었다. 50% 의 출처가 없으니 사실 기반이
         # 아니었고, 기획이 그것을 본받아 "매물이 평균 거래건수의 3배를 넘는지"
         # 같은 기준을 만들어 냈다. 규칙을 content_rules 한 곳에서 가져온다.
-        rule_4 = """4. 판단 기준 3가지를 만듭니다.
+        rule_4 = """4. 판단 기준을 만듭니다. **2~4개 중 내용에 맞게 정하세요.**
+   - 세 개로 맞추려고 약한 기준을 끼워 넣지 마세요. 두 개면 두 개입니다.
+     지금까지 매번 세 개가 나왔고, 그 탓에 제목까지 '3가지'로 굳었습니다.
    - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 쓰지 마세요. 책임 소재가 될 수 있습니다.
    - 각 항목은 한 문장, 독자가 스스로 예/아니오를 판단할 수 있어야 합니다.
    - 아래 [판단 기준] 규칙을 그대로 지키세요. 특히 **출처 없는 숫자로
      선을 긋지 마세요.** 기준을 세울 수 없으면 상대 비교로 쓰세요."""
-        field_4 = '"criteria": ["판단 기준 1", "판단 기준 2", "판단 기준 3"],'
+        field_4 = '"criteria": ["판단 기준 1", "판단 기준 2", "..."],'
         calc_note = '   - 이 글의 주제와 직접 관련이 없으면 "없음"으로 두세요.'
 
     criteria_rules = cr.build_criteria_rules()
@@ -560,7 +577,7 @@ def build_plan_prompt(result, feedback=None, previous=None):
   "conclusion": "핵심 결론 한 문장",
   {field_4}
   "calc_tab": "계산기 탭 (위 후보 중 하나)",
-  "title_draft": "가제 (독자가 얻어갈 것이 드러나게)"
+  "title_draft": "가제 (독자가 얻어갈 것이 드러나게. 위 이력의 제목 틀은 피할 것)"
 }}"""
 
     if feedback and previous:
@@ -579,7 +596,9 @@ def build_plan_prompt(result, feedback=None, previous=None):
 def format_plan_message(plan, result, round_no):
     head = "[기획안]" if round_no == 0 else "[기획안 수정본]"
     track = result.get("track", "jisik")
-    label = "짚을 사실 3가지" if track in INFO_TRACKS else "판단 기준 3가지"
+    crits = plan.get("criteria", [])[:4]
+    label = "{} {}가지".format(
+        "짚을 사실" if track in INFO_TRACKS else "판단 기준", len(crits))
     lines = [
         head + " " + result["category_display"] + " · " + result["top_keyword"],
         "",
@@ -589,7 +608,7 @@ def format_plan_message(plan, result, round_no):
         "",
         label,
     ]
-    for i, c in enumerate(plan.get("criteria", [])[:3], 1):
+    for i, c in enumerate(crits, 1):
         lines.append("  " + str(i) + ". " + c)
     lines += [
         "",

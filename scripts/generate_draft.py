@@ -42,6 +42,61 @@ SEARCH_MAX_USES = 5
 DRAFT_MAX_TOKENS = 24000
 DRAFT_RETRY_TOKENS = 32000
 
+# 제목이 몇 주째 같은 틀로 나왔다. 2026-10-06 실거래가 '계약 전 3가지',
+# 10-12 지원시설 '계약 전 판단기준표', 10-19 전용률 '계약 전 확인할 3가지',
+# 10-26 조건 '계약 전 확인할 3가지'. 주제는 다 다른데 독자에게는 같은
+# 글로 보인다. 키워드 쿨다운은 키워드만 보므로 이것을 못 잡는다.
+# 그래서 **결과물인 제목**을 기록해 다음 글에 보여주고 피하게 한다.
+TITLE_HISTORY_FILE = os.path.join("state", "title_history.json")
+TITLE_HISTORY_KEEP = 8      # 파일에 몇 편까지 들고 있을 것인가
+TITLE_SHOW = 4              # 프롬프트에 몇 편을 보여줄 것인가
+
+
+def load_title_history():
+    try:
+        with open(TITLE_HISTORY_FILE, "r", encoding="utf-8") as f:
+            v = json.load(f)
+        if not isinstance(v, list):
+            return []
+        return [str(t).strip() for t in v if str(t).strip()]
+    except Exception:
+        return []
+
+
+def save_title_history(title):
+    """새 제목을 앞에 넣고 오래된 것을 버린다. 실패해도 초안은 살린다."""
+    title = (title or "").strip()
+    if not title:
+        return
+    hist = [t for t in load_title_history() if t != title]
+    hist.insert(0, title)
+    try:
+        os.makedirs("state", exist_ok=True)
+        with open(TITLE_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(hist[:TITLE_HISTORY_KEEP], f,
+                      ensure_ascii=False, indent=1)
+        print("제목 이력 저장: {}편".format(len(hist[:TITLE_HISTORY_KEEP])))
+    except Exception as e:
+        print("제목 이력 저장 실패(무시): " + str(e))
+
+
+def build_title_history_block():
+    """최근 제목을 보여주고 같은 틀을 피하게 한다. 없으면 빈 문자열."""
+    hist = load_title_history()[:TITLE_SHOW]
+    if not hist:
+        return ""
+    lines = ["**최근 발행 제목 — 이 틀을 반복하지 마세요**"]
+    lines += ["- " + t for t in hist]
+    lines += [
+        "",
+        "주제가 달라도 제목의 **모양**이 같으면 독자에게는 같은 글로 보입니다.",
+        "위 제목들과 같은 뼈대를 다시 쓰지 마세요.",
+        "특히 '~ 계약 전 확인할 N가지', '~ 체크 N가지', '~ 판단기준표' 처럼",
+        "앞말만 바꾸면 되는 틀을 피하세요.",
+        "이번 글에서 실제로 밝혀낸 것이 드러나는 제목을 지으세요.",
+    ]
+    return "\n".join(lines)
+
 # 물건 종류를 가르는 낱말. 긴 것을 먼저 두는 것이 중요하다.
 # "상가주택" 에는 "상가" 가 들어 있고 "오피스텔" 에는 "오피스" 가 들어 있어서,
 # 짧은 쪽이 앞에 오면 상가주택 글이 상가 글로 잡힌다.
@@ -386,7 +441,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
                  "**참고 링크가 없으므로 이 섹션을 통째로 생략하세요.** 없는 링크를 지어내지 마세요.")
     kw = result["top_keyword"]
 
-    output_type = plan.get("output_type", "② 합격/불합격 기준")
+    # 기본값이 '② 합격/불합격 기준' 이었는데 그런 유형은 목록에 없다.
+    # 유형 목록을 고치면서 기본값만 안 따라간 자국이다 (2026-10-26 확인).
+    # 기획이 비어 올 때만 쓰이는 값이라 조용히 어긋나 있었다.
+    output_type = plan.get("output_type") or "① 조건별 판단 기준표"
     conclusion = plan.get("conclusion", "")
     criteria = plan.get("criteria", [])
     calc_tab = plan.get("calc_tab", "없음")
@@ -398,7 +456,10 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
     # 기획을 고쳐도 초안에서 다시 경고문으로 돌아간다.
     is_info = category in INFO_TRACKS
     council_block = build_council_section(load_council_rows()) if is_info else ""
-    criteria_label = "이 글에서 짚을 사실 3가지" if is_info else "판단 기준 3가지"
+    # 2026-10-26: 라벨에 '3가지'가 박혀 있어 제목까지 '3가지'로 수렴했다.
+    # 가짓수는 내용이 정한다. 숫자는 소제목 규칙에서 따로 다룬다.
+    criteria_label = "이 글에서 짚을 사실" if is_info else "판단 기준"
+    title_history_block = build_title_history_block()
     core_principle = INFO_CORE_PRINCIPLE if is_info else (
         "가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**\n"
         "독자가 다 읽고 나서 \"그래서 나는 무엇을 하면 되는가\"에 스스로 답할 수 있어야 합니다.\n"
@@ -598,8 +659,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
    - 표, 체크리스트, 순서도 중 형식은 내용에 맞게 고르되, 독자가 자기 상황을 대입할 수 있어야 합니다.
    - 남의 사례를 읽고 끝나는 게 아니라, 독자가 자기 숫자·자기 조건을 넣어볼 수 있는 형태로 만드세요.
 
-5. ## 판단 기준 3가지
-   - 위 [확정 기획]의 판단 기준 3가지를 **먼저 점검하세요.** 기획은 초안보다
+5. ## {criteria_label} (소제목은 내용에 맞게 구체적으로. 아래 가짓수 규칙을 보세요)
+   - 위 [확정 기획]의 {criteria_label}을 **먼저 점검하세요.** 기획은 초안보다
      앞서 만들어진 것이라 확인이 덜 된 항목이 섞입니다. 아래에 걸리는 항목은
      [판단 기준] 규칙에 맞게 고쳐서 쓰세요. 고쳤다는 말은 본문에 쓰지 말고
      고친 결과만 쓰세요.
@@ -609,8 +670,11 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
      · 단위가 다른 값을 배수로 비교하는 항목 — 매물 건수 ÷ 거래 건수
    - 남긴 항목은 각각 왜 그것이 중요한지 2~3문장으로 풀고,
      **확인 경로(사이트 → 메뉴 → 무엇을 고를지)를 함께 적으세요.**
-   - **개수를 늘리거나 줄이지 마세요.** 소제목의 숫자와 실제 항목 수가 반드시 같아야 합니다.
+   - **가짓수는 2~4개 중 내용에 맞게 정하세요.** 기획이 넘긴 개수를 채우려고
+     위에서 걸러낸 항목을 억지로 남기지 마세요. 걸러낸 뒤 남은 것만 씁니다.
      다룰 내용이 더 있으면 다른 섹션에 넣으세요.
+   - 소제목에 숫자를 넣을지도 스스로 정하세요. 넣는다면 **실제 항목 수와
+     반드시 같아야 합니다.** 최근 글이 계속 '3가지'였다면 이번에는 다르게 가세요.
    - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 하지 마세요.
      다만 "전용률 50% 미만이면 실사용에 부적합" 같은 사실 기반의 판단 기준은 제시하세요.
    - 대신 "이것이 정리되지 않으면 결론을 내리기 이르다"는 톤을 유지하세요.
@@ -653,6 +717,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 {council_block}
 ──────────────────────────────
 {core_principle}
+
+{title_history_block}
 
 **웹 검색 활용**
 - 웹 검색 도구로 이 주제의 최신 법령·세율·정책·시세를 오늘 날짜 기준으로 직접 조사해 실제 숫자로 쓰세요.
@@ -1241,6 +1307,7 @@ def main():
         # 초안 첫 H1(제목)을 뽑아 썸네일 카피 생성의 입력으로 사용
         m = re.search(r"^#\s+(.+)$", draft, flags=re.MULTILINE)
         post_title = m.group(1).strip() if m else result["top_keyword"]
+        save_title_history(post_title)
 
         th_headline, th_highlight, th_sub = generate_thumbnail_copy(
             post_title, result["category_display"]

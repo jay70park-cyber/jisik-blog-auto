@@ -76,6 +76,81 @@ MIN_CHARS = 2000
 MAX_CHARS = 3600          # 3000자 기준에 여유를 둔다
 MIN_HASHTAGS = 5
 
+# ── 제목 틀 반복 ────────────────────────────────
+# 2026-10-06 '실거래가 확인 계약 전 3가지', 10-12 '지원시설 계약 전
+# 판단기준표', 10-19 '전용률, 계약 전 확인할 3가지', 10-26 '조건,
+# 계약 전 확인할 3가지'. 주제는 매번 달랐는데 제목 틀이 같았다.
+# 키워드 쿨다운은 재료만 보고, 기획 이력은 독자·산출물만 봤다.
+# 완성된 제목을 보는 눈이 아무 데도 없었다.
+#
+# 기계로 센다. 모델에게 물으면 매번 판정이 흔들리고 비용도 든다.
+# 공통 어절 비율로 본다. 아래 말들은 우리 글에 늘 들어가므로 뺀다.
+TITLE_HISTORY_FILE = os.path.join(STATE_DIR, "title_history.json")
+TITLE_COMPARE = 4          # 최근 몇 편과 비교할 것인가
+TITLE_STOPWORDS = ("동탄 지식산업센터", "지식산업센터", "동탄 지산센터",
+                   "지산센터", "아파트형공장", "동탄", "지산")
+TITLE_FAIL = 0.60          # 어절이 이 비율 넘게 겹치면 실패
+TITLE_WARN = 0.40          # 이 비율 넘으면 주의
+
+
+def title_words(t):
+    """제목에서 늘 들어가는 말을 빼고 어절 집합을 만든다."""
+    s = str(t or "")
+    for w in TITLE_STOPWORDS:
+        s = s.replace(w, " ")
+    out = set()
+    for tok in s.split():
+        tok = re.sub(r"[,.·…\-—!?~\"'“”‘’()\[\]]+", "", tok).strip()
+        if tok:
+            out.add(tok)
+    return out
+
+
+def load_title_history():
+    try:
+        with open(TITLE_HISTORY_FILE, encoding="utf-8") as f:
+            v = json.load(f)
+        return [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
+def check_title_repeat(draft):
+    """초안 제목이 최근 제목과 같은 뼈대인지 센다. 판정 한 줄을 돌려준다."""
+    m = re.search(r"^#\s+(.+)$", draft, flags=re.MULTILINE)
+    if not m:
+        return ("제목 틀", "주의", "H1 제목을 찾지 못했습니다")
+    title = m.group(1).strip()
+
+    # generate_draft 가 이번 제목을 이미 이력 맨 앞에 넣었을 수 있다.
+    hist = [t for t in load_title_history() if t != title][:TITLE_COMPARE]
+    if not hist:
+        return ("제목 틀", "통과", "비교할 이력이 없습니다")
+
+    now = title_words(title)
+    if not now:
+        return ("제목 틀", "주의", "비교할 낱말이 없습니다")
+
+    worst, worst_t, worst_sh = 0.0, "", ()
+    for old in hist:
+        prev = title_words(old)
+        if not prev:
+            continue
+        shared = now & prev
+        ratio = len(shared) / float(min(len(now), len(prev)))
+        if ratio > worst:
+            worst, worst_t, worst_sh = ratio, old, tuple(sorted(shared))
+
+    pct = int(round(worst * 100))
+    if worst >= TITLE_FAIL:
+        return ("제목 틀", "실패",
+                "최근 제목과 {}% 겹칩니다 ('{}') — 겹친 말: {}".format(
+                    pct, worst_t, " ".join(worst_sh)))
+    if worst >= TITLE_WARN:
+        return ("제목 틀", "주의",
+                "최근 제목과 {}% 겹칩니다 ('{}')".format(pct, worst_t))
+    return ("제목 틀", "통과", "최근 제목과 {}% — 다른 틀입니다".format(pct))
+
 
 def load_json(path):
     if not os.path.exists(path):
@@ -180,6 +255,8 @@ def check_mechanical(draft, plan):
     else:
         out.append(("해시태그", "통과", "{}개".format(len(tags))))
 
+    out.append(check_title_repeat(draft))
+
     hits = [w for w in BANNED if w in draft]
     if hits:
         out.append(("금지 표현", "주의", ", ".join(hits[:5])))
@@ -270,9 +347,11 @@ def check_mechanical(draft, plan):
 # ─────────────────────────────────────────────
 
 def build_verify_prompt(plan, draft):
-    criteria = plan.get("criteria", [])
+    # 2026-10-26: [:3] 으로 잘라서, 기획이 네 개를 내도 검증은 세 개만 봤다.
+    # 가짓수를 2~4로 푼 뒤로는 자르면 안 된다.
+    criteria = plan.get("criteria", [])[:4]
     crit_text = "\n".join(
-        "   {}. {}".format(i, c) for i, c in enumerate(criteria[:3], 1))
+        "   {}. {}".format(i, c) for i, c in enumerate(criteria, 1))
 
     return """오늘은 {today}입니다. 이 날짜를 기준으로 판단하세요.
 
@@ -283,7 +362,7 @@ def build_verify_prompt(plan, draft):
 - 독자: {reader}
 - 산출물 유형: {output}
 - 핵심 결론: {conclusion}
-- 판단 기준 3가지:
+- 판단 기준 ({ncrit}가지):
 {crit}
 
 [초안]
@@ -303,8 +382,11 @@ def build_verify_prompt(plan, draft):
 3. 핵심 결론 일치 — 기획안의 결론이 서두에 그대로 제시되고,
    본문 전개가 그 결론을 뒷받침하는가.
 
-4. 판단 기준 반영 — 기획안의 판단 기준 3가지가 본문에 모두 등장하고
+4. 판단 기준 반영 — 기획안의 판단 기준이 본문에 모두 등장하고
    각각 설명되었는가. 빠지거나 다른 내용으로 바뀌지 않았는가.
+   **가짓수는 2~4개 중 어느 것이어도 됩니다.** 세 개가 아니라고
+   지적하지 마세요. 다만 본문 소제목에 숫자를 썼다면 그 숫자와
+   실제 항목 수가 같아야 합니다.
    이 항목은 **일치 여부만** 본다. 기준이 올바른지는 11번에서 따로
    판정하므로, 여기서 '통과' 가 기준이 타당하다는 뜻은 아니다.
 
@@ -394,6 +476,7 @@ def build_verify_prompt(plan, draft):
         reader=plan.get("reader", "-"),
         output=plan.get("output_type", "-"),
         conclusion=plan.get("conclusion", "-"),
+        ncrit=len(criteria),
         crit=crit_text or "   (없음)",
         criteria=cr.build_criteria_rules(),
         draft=draft[:12000],
