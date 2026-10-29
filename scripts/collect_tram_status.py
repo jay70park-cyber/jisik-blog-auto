@@ -47,6 +47,15 @@ FIELDS = ["회차", "등록일", "글링크", "이미지주소", "수집일"]
 STALE_DAYS = 16
 MAX_NEW_NOTIFY = 3          # 한 번에 알릴 최대 건수 (첫 실행 대비)
 
+# 미리보기는 상세 페이지를 몇 개만 연다.
+#
+# 2026-10-29: 미리보기인데도 10개를 다 열게 해 두었다. 상세 조회가
+# 막히면 한 장에 재시도 3회 × 30초라 10장이면 15분이다. 워크플로
+# 제한이 10분이라 **확인하려고 돌린 것이 시간 초과로 죽는다.**
+# 미리보기의 목적은 '이미지 주소를 뽑을 수 있는가' 이고, 그건 두세
+# 장이면 안다.
+PROBE_DETAILS = 3
+
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -236,12 +245,24 @@ def main():
     new = [r for r in rows if r["회차"] not in seen]
     print("새 회차 {}건 · 누적 {}건".format(len(new), len(seen)))
 
+    if probe:
+        print()
+        print("── 목록 (아무것도 저장하지 않습니다) ──")
+        for r in rows[:10]:
+            mark = "새 " if r["회차"] not in seen else "   "
+            print("  {}{} | {} | {}".format(
+                mark, r["등록일"], r["회차"][:40], r["글번호"]))
+        print()
+        print("── 상세 {}건만 열어 이미지 주소를 확인합니다 ──".format(
+            min(PROBE_DETAILS, len(new))))
+
     # 새 글의 이미지 주소를 상세 페이지에서 가져온다.
+    todo = new[:PROBE_DETAILS] if probe else new
     merged = dict(seen)
     got = []
-    for r in new:
+    for r in todo:
         detail = DETAIL_URL + r["글번호"]
-        img = parse_image(fetch(detail))
+        img = parse_image(fetch(detail, retries=2))
         if not img:
             print("  이미지를 못 찾음: " + r["회차"])
         row = {
@@ -256,15 +277,13 @@ def main():
         time.sleep(0.5)
 
     if probe:
-        print()
-        print("── 미리보기 (아무것도 저장하지 않습니다) ──")
-        for r in rows[:10]:
-            mark = "새 " if r["회차"] not in seen else "   "
-            print("  {}{} | {} | {}".format(
-                mark, r["등록일"], r["회차"][:40], r["글번호"]))
-        print()
         for r in got:
             print("  {} → {}".format(r["회차"], r["이미지주소"] or "(이미지 없음)"))
+        ok = sum(1 for r in got if r["이미지주소"])
+        print()
+        print("판정: 목록 {}건 · 이미지 {}/{}건".format(
+            len(rows), ok, len(got)))
+        print("이미지가 0건이면 parse_image 를 고쳐야 합니다.")
         return 0
 
     if got:
