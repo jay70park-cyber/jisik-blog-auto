@@ -433,6 +433,7 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
         realprice = load_realprice_summary()
     headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
     agenda_material = build_agenda_material(result) if category == "local" else ""
+    own_image_hint = build_own_image_hint(result)
     auction = load_auction_summary() if category == "auction" else ""
     refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
     refs_rule = ("위에 제공된 참고 링크를 **제목과 URL을 함께** 마크다운 링크 형식으로 나열하세요. "
@@ -759,6 +760,8 @@ def build_prompt(result, refs, today, plan=None, category="jisik"):
 "회의실 내부", "서류와 계산기"처럼 쓰세요.
 독립된 문단으로 배치하고, 관심도 수치를 그래프로 만들지 마세요.
 
+{own_image_hint}
+
 **중복 금지**: 같은 사실·수치를 여러 섹션에서 표현만 바꿔 반복하지 마세요. 각 섹션은 새로운 내용을 더해야 합니다.
 
 **가독성**: 한 문단 최대 3~4줄. 나열 정보는 반드시 불릿. 각 섹션의 핵심 결론 문장은 볼드.
@@ -849,6 +852,126 @@ def fetch_unsplash_image(query, timeout=15):
         return None
 
 
+# ── 우리가 가진 공식 이미지 ──────────────────────
+#
+# 2026-10-29 추가. 트램 노선도 한 장이 스톡사진 백 장보다 낫다.
+# Unsplash 보다 **먼저** 찾는다.
+#
+# 고르는 조건은 두 낱말이 함께 있을 때다 — 주제(트램·도시철도)와
+# 종류(노선도·조감도·추진현황). 한쪽만 보면 GTX 노선도 설명에도
+# 트램 그림이 붙는다.
+#
+# 저장소가 공개라 raw 주소가 그대로 열린다 (2026-10-29 확인).
+# 비공개로 바꾸면 이 주소가 죽는다. 그때는 OWN_IMAGE_BASE 를
+# 화성시 서버 쪽으로 갈아끼운다.
+OWN_IMAGE_BASE = os.environ.get(
+    "OWN_IMAGE_BASE",
+    "https://raw.githubusercontent.com/jay70park-cyber/"
+    "jisik-blog-auto/main/docs")
+
+# 수집기(collect_tram_status.py)가 쌓아 두는 주간 추진현황.
+# 여기 있으면 화성시 서버 주소를 그대로 쓴다 — 우리가 파일을 올릴
+# 필요도, 새 회차마다 코드를 고칠 필요도 없다.
+TRAM_STATUS_CSV = os.path.join("data", "tram_status.csv")
+
+
+def latest_tram_status():
+    """가장 최근 추진현황 (주소, 캡션, 출처). 없으면 None."""
+    if not os.path.exists(TRAM_STATUS_CSV):
+        return None
+    try:
+        with open(TRAM_STATUS_CSV, encoding="utf-8-sig", newline="") as f:
+            rows = [r for r in csv.DictReader(f)
+                    if (r.get("이미지주소") or "").strip()]
+    except Exception as e:
+        print("추진현황 목록을 못 읽었습니다: " + str(e))
+        return None
+    if not rows:
+        return None
+    r = max(rows, key=lambda x: x.get("등록일", ""))
+    return (r["이미지주소"].strip(),
+            (r.get("회차") or "동탄도시철도 사업추진 현황").strip(),
+            "화성시 트램건설추진단")
+
+
+OWN_IMAGES = [
+    # (주제 낱말, 종류 낱말, 파일 경로, 캡션, 출처, 수집본을 먼저 볼지)
+    (("트램", "도시철도"), ("노선도", "노선", "구간도", "단계"),
+     "tram/tram-route.jpg",
+     "동탄도시철도 노선도 — 망포-오산선 16.58km · 병점-동탄2신도시선 17.82km",
+     "화성시 트램건설추진단", None),
+    (("트램", "도시철도"), ("추진현황", "진행 상황", "사업추진", "현황"),
+     # 주마다 새 회차가 나온다. 파일명에 주차를 박으면 매주 이 줄을
+     # 고쳐야 하고, 안 고치면 글은 최신인데 그림만 과거가 된다.
+     # 같은 이름으로 덮어쓰고, 몇 주치인지는 그림 안에 찍힌 것을 믿는다.
+     # 캡션에도 주차를 적지 않는다 — 같은 이유로 어긋난다.
+     "tram/tram-status-latest.png",
+     "동탄도시철도 사업추진 현황",
+     "화성시 트램건설추진단", "tram_status"),
+    (("트램", "도시철도"), ("정거장", "승강장", "역사"),
+     "tram/tram-station.jpg",
+     "동탄트램 정거장 조감도",
+     "화성시 트램건설추진단", None),
+    (("트램", "도시철도"), ("차량", "전동차"),
+     "tram/tram-vehicle.jpg",
+     "동탄트램 차량 조감도",
+     "화성시 트램건설추진단", None),
+]
+
+
+def pick_own_image(kor_part):
+    """설명에 맞는 우리 이미지가 있으면 (주소, 캡션, 출처), 없으면 None.
+
+    수집본이 있는 항목은 **그쪽을 먼저 본다.** 추진현황은 매주 바뀌어서
+    저장소 사본은 금방 낡는다. 수집기가 안 돌았거나 비어 있으면
+    저장소에 올려둔 것으로 물러난다 — 그림이 통째로 빠지는 것보다 낫다.
+    """
+    s = str(kor_part or "")
+    for topics, kinds, path, caption, source, live in OWN_IMAGES:
+        if not (any(t in s for t in topics) and any(k in s for k in kinds)):
+            continue
+        if live == "tram_status":
+            got = latest_tram_status()
+            if got:
+                return got
+            print("추진현황 수집본이 없어 저장소 사본을 씁니다.")
+        return OWN_IMAGE_BASE.rstrip("/") + "/" + path, caption, source
+    return None
+
+
+def build_own_image_hint(result):
+    """전용 이미지가 있는 주제면 프롬프트에 알린다. 없으면 빈 문자열.
+
+    이 안내가 없으면 모델은 전용 이미지가 있는 줄 모르고
+    스톡사진용 설명만 쓴다. 그러면 위 pick_own_image 가 영영 안 걸린다.
+    """
+    hay = " ".join(str(x or "") for x in (
+        (result or {}).get("top_keyword"),
+        (result or {}).get("category_display"),
+        ((result or {}).get("agenda") or {}).get("현안명"),
+    ))
+    picked = [row for row in OWN_IMAGES
+              if any(t in hay for t in row[0])]
+    if not picked:
+        return ""
+    lines = ["**이 주제에는 우리가 가진 공식 이미지가 있습니다.**",
+             "스톡사진보다 이것이 훨씬 낫습니다. 아래 중 **두 장**을 고르세요.",
+             "한글 설명에 주제어와 종류어를 **함께** 넣어야 그 그림이 들어갑니다.",
+             ""]
+    for topics, kinds, _path, caption, _src in picked:
+        lines.append("- {}".format(caption))
+        lines.append("    설명에 두 낱말을 함께 — '{}' + '{}'".format(
+            topics[0], kinds[0]))
+    lines += [
+        "",
+        "예: [이미지: 동탄트램 노선도 | search: tram route map]",
+        "`| search:` 는 그대로 두세요. 전용 이미지를 못 찾았을 때만 쓰입니다.",
+        "이 그림들은 화성시 공식 자료라 **없는 장면을 만들지 않습니다.**",
+        "위 스톡사진 주의사항(특정 기관·장소를 쓰지 말라)은 여기 해당하지 않습니다.",
+    ]
+    return "\n".join(lines)
+
+
 def render_images(markdown_text, rows):
     """[이미지: 한글설명 | search: english keywords] 패턴을 실제 이미지로 치환한다.
     - '스코어'/'그래프'/'차트'/'비교' 등 데이터 시각화 요청은 직접 그린 그래프로 대체
@@ -868,6 +991,18 @@ def render_images(markdown_text, rows):
                         '<img src="' + chart + '" width="430" style="width:430px;max-width:100%;border-radius:8px;" alt="' + kor_part + '">'
                         '<figcaption style="font-size:15px;color:#999;margin-top:6px;">' + kor_part + '</figcaption>'
                         '</figure>')
+
+        own = pick_own_image(kor_part)
+        if own:
+            own_url, own_caption, own_source = own
+            print("전용 이미지 사용: " + own_caption)
+            return ('<figure style="margin:20px 0;text-align:center;">'
+                    '<img src="' + own_url + '" width="430" '
+                    'style="width:430px;max-width:100%;border-radius:8px;" '
+                    'alt="' + own_caption + '">'
+                    '<figcaption style="font-size:14px;color:#888;margin-top:6px;">'
+                    + own_caption + '<br>출처: ' + own_source + '</figcaption>'
+                    '</figure>')
 
         photo = fetch_unsplash_image(search_query)
         if photo:
