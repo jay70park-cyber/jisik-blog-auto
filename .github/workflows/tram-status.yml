@@ -1,0 +1,68 @@
+name: 동탄트램 추진현황 수집
+
+# 화성시 「동탄트램 추진현황」 게시판(주간)을 매일 훑는다.
+#
+# 매일 도는 이유: 게시 간격이 5~9일로 들쭉날쭉하다. 요일을 고정하면
+# 놓친다. 새 회차가 있는 날만 텔레그램으로 알리므로 소음은 없다.
+
+on:
+  schedule:
+    - cron: '20 23 * * *'        # KST 08:20
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "미리보기만 할 때 yes (아무것도 저장하지 않음)"
+        default: ''
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 수집
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.probe }}" = "yes" ]; then
+            python3 -B scripts/collect_tram_status.py --probe
+          else
+            python3 -B scripts/collect_tram_status.py
+          fi
+
+      - name: 미리보기였으면 변경이 없어야 한다
+        if: ${{ github.event.inputs.probe == 'yes' }}
+        run: |
+          DIRTY=$(git status --porcelain --untracked-files=no)
+          if [ -n "$DIRTY" ]; then
+            echo "::error::미리보기인데 파일이 바뀌었습니다"
+            echo "$DIRTY"
+            exit 1
+          fi
+          echo "변경 없음 — 읽기만 했습니다"
+
+      - name: 커밋
+        if: ${{ github.event.inputs.probe != 'yes' }}
+        run: |
+          # 새로 만든 파일도 잡아야 하므로 untracked 를 빼지 않는다.
+          if [ -z "$(git status --porcelain data/tram_status.csv)" ]; then
+            echo "바뀐 것이 없어 커밋하지 않습니다"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/tram_status.csv
+          git commit -m "동탄트램 추진현황 수집"
+          git push
