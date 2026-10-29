@@ -1,0 +1,1475 @@
+# -*- coding: utf-8 -*-
+"""
+Claude API(+웹 검색 도구)를 이용해 수집 결과(collection_result.json)를 바탕으로
+최신 법령/세율 등을 직접 조사해 반영한 블로그 초안을 생성하고,
+텔레그램으로 초안 파일을 발송한다.
+"""
+import os
+import csv
+import json
+import datetime
+KST = datetime.timezone(datetime.timedelta(hours=9))
+
+def today_kst():
+    return datetime.datetime.now(KST).date()
+import urllib.request
+import urllib.parse
+import markdown as md_lib
+import re
+import base64
+import io
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import make_thumbnail as thumb
+import make_map
+from content_rules import (build_rules, build_council_section,
+                           build_info_structure, INFO_CORE_PRINCIPLE,
+                           INFO_TRACKS)
+
+NAVER_ID = os.environ["NAVER_CLIENT_ID"]
+NAVER_SECRET = os.environ["NAVER_CLIENT_SECRET"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+MODEL = "claude-sonnet-5"
+
+# 웹 검색과 사고가 출력 한도를 통째로 먹으면 본문이 0자로 나온다.
+# 2026-10-19: 검색 10회 + 사고 8블록으로 16,000 을 다 쓰고
+# text 블록이 아예 없었다. 검색 횟수를 묶고 한도를 올린다.
+SEARCH_MAX_USES = 5
+DRAFT_MAX_TOKENS = 24000
+DRAFT_RETRY_TOKENS = 32000
+
+# 제목이 몇 주째 같은 틀로 나왔다. 2026-10-06 실거래가 '계약 전 3가지',
+# 10-12 지원시설 '계약 전 판단기준표', 10-19 전용률 '계약 전 확인할 3가지',
+# 10-26 조건 '계약 전 확인할 3가지'. 주제는 다 다른데 독자에게는 같은
+# 글로 보인다. 키워드 쿨다운은 키워드만 보므로 이것을 못 잡는다.
+# 그래서 **결과물인 제목**을 기록해 다음 글에 보여주고 피하게 한다.
+TITLE_HISTORY_FILE = os.path.join("state", "title_history.json")
+TITLE_HISTORY_KEEP = 8      # 파일에 몇 편까지 들고 있을 것인가
+TITLE_SHOW = 4              # 프롬프트에 몇 편을 보여줄 것인가
+
+
+def load_title_history():
+    try:
+        with open(TITLE_HISTORY_FILE, "r", encoding="utf-8") as f:
+            v = json.load(f)
+        if not isinstance(v, list):
+            return []
+        return [str(t).strip() for t in v if str(t).strip()]
+    except Exception:
+        return []
+
+
+def save_title_history(title):
+    """새 제목을 앞에 넣고 오래된 것을 버린다. 실패해도 초안은 살린다."""
+    title = (title or "").strip()
+    if not title:
+        return
+    hist = [t for t in load_title_history() if t != title]
+    hist.insert(0, title)
+    try:
+        os.makedirs("state", exist_ok=True)
+        with open(TITLE_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(hist[:TITLE_HISTORY_KEEP], f,
+                      ensure_ascii=False, indent=1)
+        print("제목 이력 저장: {}편".format(len(hist[:TITLE_HISTORY_KEEP])))
+    except Exception as e:
+        print("제목 이력 저장 실패(무시): " + str(e))
+
+
+def build_title_history_block():
+    """최근 제목을 보여주고 같은 틀을 피하게 한다. 없으면 빈 문자열."""
+    hist = load_title_history()[:TITLE_SHOW]
+    if not hist:
+        return ""
+    lines = ["**최근 발행 제목 — 이 틀을 반복하지 마세요**"]
+    lines += ["- " + t for t in hist]
+    lines += [
+        "",
+        "주제가 달라도 제목의 **모양**이 같으면 독자에게는 같은 글로 보입니다.",
+        "위 제목들과 같은 뼈대를 다시 쓰지 마세요.",
+        "특히 '~ 계약 전 확인할 N가지', '~ 체크 N가지', '~ 판단기준표' 처럼",
+        "앞말만 바꾸면 되는 틀을 피하세요.",
+        "이번 글에서 실제로 밝혀낸 것이 드러나는 제목을 지으세요.",
+    ]
+    return "\n".join(lines)
+
+# 물건 종류를 가르는 낱말. 긴 것을 먼저 두는 것이 중요하다.
+# "상가주택" 에는 "상가" 가 들어 있고 "오피스텔" 에는 "오피스" 가 들어 있어서,
+# 짧은 쪽이 앞에 오면 상가주택 글이 상가 글로 잡힌다.
+# 각 줄의 첫 낱말이 그 묶음의 이름이고, 같은 줄은 같은 물건으로 본다.
+PROPERTY_KINDS = [
+    ["지식산업센터", "지산", "아파트형공장"],
+    ["상가주택"],
+    ["근린상가", "상가"],
+    ["오피스텔"],
+    ["오피스", "사무실"],
+    ["공장", "창고"],
+    ["토지"],
+]
+
+
+def property_kind(text):
+    """글이 다루는 물건 종류를 알아낸다. 못 찾으면 None.
+
+    None 은 '종류를 특정하지 않는 글'이라는 뜻이다. 지역 현안처럼
+    물건 종류가 없는 키워드가 그렇고, 그때는 종류 검사를 건너뛴다.
+    """
+    for group in PROPERTY_KINDS:
+        if any(w in text for w in group):
+            return group[0]
+    return None
+
+
+def fetch_reference_links(keyword, count=6, timeout=15):
+    """대표 키워드로 네이버 블로그를 검색해 제목+링크를 가져온다.
+
+    검색어가 넓으면 무관한 글이 딸려온다("인천 세차장 매매" 같은 것).
+    제목에 지역명이 없거나 물건 종류가 다르면 버린다.
+    남는 게 없으면 빈 목록을 돌려주고, 호출하는 쪽에서
+    '더 읽어보기' 섹션 자체를 생략한다.
+    """
+    url = "https://naverapihub.apigw.ntruss.com/search/v1/blog?" + urllib.parse.urlencode(
+        {"query": keyword, "display": count, "sort": "sim"}
+    )
+    req = urllib.request.Request(
+        url,
+        headers={
+            "X-NCP-APIGW-API-KEY-ID": NAVER_ID,
+            "X-NCP-APIGW-API-KEY": NAVER_SECRET,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.load(res)
+    except Exception as e:
+        print("참고 링크 검색 오류: " + str(e))
+        return []
+
+    # 제목에 지역명이 없으면 우리 독자와 무관한 글이다.
+    # "지식산업센터"만으로는 마곡·성수 분양 홍보 글이 통과한다.
+    must_have = ["동탄", "화성", "기흥", "용인"]
+
+    # 지역만 보면 물건 종류가 달라도 통과한다. 2026-10-01 실거래 글에
+    # "동탄상가주택 매매 (산업단지) 동탄2신도시상가주택" 이 '더 읽어보기'로
+    # 실렸다. 지역은 같고 물건은 다르니 독자에게 쓸모가 없다.
+    # 이 함수의 설명은 '지역·주제 낱말'을 본다고 적혀 있었지만
+    # 실제로는 지역만 보고 있었다.
+    want_kind = property_kind(keyword)
+
+    # 분양 홍보 블로그가 상위에 많이 걸린다. 독자에게 도움이 안 되고
+    # 남의 영업 글로 내보내는 셈이라 제외한다.
+    exclude = ["분양안내", "분양개시", "홍보관", "모델하우스",
+               "분양문의", "선착순", "특별분양", "미분양", "잔여세대"]
+
+    refs = []
+    dropped = 0
+    for it in data.get("items", []):
+        title = it.get("title", "").replace("<b>", "").replace("</b>", "")
+        title = title.replace("&amp;", "&").replace("&quot;", '"').strip()
+        link = it.get("link", "")
+        if any(w in title for w in exclude):
+            dropped += 1
+            continue
+        if not any(w in title for w in must_have):
+            dropped += 1
+            continue
+        if want_kind and property_kind(title) != want_kind:
+            dropped += 1
+            continue
+        refs.append({"title": title, "link": link})
+
+    seen_domain = set()
+    out = []
+    for r in refs:
+        m = re.search(r"https?://([^/]+)", r["link"])
+        dom = m.group(1) if m else r["link"]
+        if dom in seen_domain:
+            continue
+        seen_domain.add(dom)
+        out.append(r)
+
+    print("참고 링크: {}건 채택, {}건 제외".format(len(out), dropped))
+    return out[:3]
+
+def call_claude_with_search(prompt, timeout=480,
+                            max_tokens=DRAFT_MAX_TOKENS,
+                            search=True, max_uses=SEARCH_MAX_USES):
+    """Claude API를 호출한다. search=False 면 웹 검색을 끈다.
+
+    검색 결과는 본문과 같은 출력 한도를 쓴다. 검색이 많이 돌면
+    본문 쓸 자리가 안 남아 text 블록이 통째로 안 나온다.
+    그래서 횟수를 max_uses 로 묶고, 그래도 비면 검색을 끄고 다시 쓴다.
+    """
+    url = "https://api.anthropic.com/v1/messages"
+    payload = {
+        "model": MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if search:
+        payload["tools"] = [{"type": "web_search_20250305",
+                             "name": "web_search",
+                             "max_uses": max_uses}]
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        data = json.load(res)
+    parts = data.get("content", [])
+    text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+    print("Claude stop_reason: " + str(data.get("stop_reason")))
+    print("Claude content block types: " + str([p.get("type") for p in parts]))
+    print("생성된 텍스트 길이: " + str(len(text)))
+    return text
+
+def load_realprice_summary(max_chars=1800):
+    """실거래 분석 요약을 읽어온다. 파일이 없으면 빈 문자열."""
+    path = os.path.join("data", "analysis_summary.txt")
+    if not os.path.exists(path):
+        print("실거래 요약 파일 없음 - 시세 없이 진행합니다.")
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n(이하 생략)"
+    print("실거래 요약 로드: {}자".format(len(text)))
+    return text
+
+def load_local_headlines(keyword="", max_items=25):
+    """지역 트랙일 때 쓸 최근 뉴스 제목. 키워드와 관련된 것을 앞에 둔다."""
+    path = os.path.join("data", "local_headlines.json")
+    if not os.path.exists(path):
+        print("뉴스 제목 파일 없음 - 검색으로 대체합니다.")
+        return "", ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        print("뉴스 제목 읽기 실패: " + str(e))
+        return "", ""
+
+    titles = data.get("headlines", [])
+    if not titles:
+        return "", ""
+
+    # 이번 키워드의 낱말이 들어간 제목을 앞으로 끌어올린다
+    words = [w for w in keyword.replace("동탄", "").split() if len(w) >= 2]
+    hit = [t for t in titles if any(w in t for w in words)]
+    rest = [t for t in titles if t not in hit]
+    picked = (hit + rest)[:max_items]
+
+    print("뉴스 제목 로드: {}건 (키워드 관련 {}건)".format(len(picked), len(hit)))
+    return "\n".join("- " + t for t in picked), data.get("updated", "")
+
+def load_auction_summary(max_chars=2000):
+    """경매 낙찰 분석 요약을 읽어온다. 파일이 없으면 빈 문자열."""
+    path = os.path.join("data", "auction_summary.txt")
+    if not os.path.exists(path):
+        print("경매 요약 파일 없음 - 경매 데이터 없이 진행합니다.")
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n(이하 생략)"
+    print("경매 요약 로드: {}자".format(len(text)))
+    return text
+
+
+def load_council_rows(days=35, limit=8):
+    """최근 회의록 요약을 읽는다. 지역·시의회 트랙에서만 쓴다.
+
+    회의록 수집은 매일 돌지만 활용은 주간 발행에 녹인다.
+    요약이 '없음'인 것은 부동산과 무관한 회의라 뺀다.
+    """
+    path = os.path.join("data", "council_minutes.csv")
+    if not os.path.exists(path):
+        print("회의록 파일 없음 - 회의록 섹션 없이 진행합니다.")
+        return []
+    since = (today_kst() - datetime.timedelta(days=days)).isoformat()
+    rows = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            s = (r.get("요약") or "").strip()
+            if s and s != "없음" and r.get("회의일", "") >= since:
+                rows.append(r)
+    rows.sort(key=lambda r: r.get("회의일", ""), reverse=True)
+    print("회의록 로드: {}건".format(len(rows[:limit])))
+    return rows[:limit]
+
+def _eok(v):
+    """억원 단위 숫자를 사람이 읽는 꼴로."""
+    if v is None:
+        return "?"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "?"
+    if v < 0.005:
+        return "0"
+    if v >= 10000:
+        return "{:,.0f}억(약 {:.1f}조)".format(v, v / 10000)
+    if v >= 1:
+        return "{:,.0f}억".format(v)
+    return "{:.2f}억".format(v)        
+    
+def build_agenda_material(result):
+    """수집 단계가 고른 현안과 그 고시 연표를 초안 재료로 만든다.
+
+    고시는 기사보다 먼저 나오고 제목에 행정 절차가 그대로 드러난다.
+    한 현안의 고시를 시간순으로 늘어놓으면 그 자체가 연표가 되고,
+    그것이 지역 개발 글 '지금까지의 흐름' 섹션의 1차 재료다.
+    """
+    a = result.get("agenda")
+    if not a:
+        return ""
+    lines = [
+        "[이번 글의 현안 — 추적 중인 지역 이슈]",
+        "현안명   : {} ({})".format(a.get("현안명", ""), a.get("분류", "")),
+        "현재 단계 : {}".format(a.get("단계", "") or "미정"),
+        "최근 진전 : {} — {}".format(
+            a.get("최근진전일", "") or "-", a.get("진전내용", "") or "-"),
+    ]
+    if a.get("메모"):
+        lines.append("메모     : " + a["메모"])
+    if a.get("확인필요"):
+        lines.append("확인필요  : {}".format(a["확인필요"]))
+        lines.append("           이 항목은 확정되지 않았습니다. 단정하지 말고")
+        lines.append("           '아직 정해지지 않았다'로 쓰세요.")
+
+    notices = a.get("관련고시") or []
+    if notices:
+        lines += [
+            "",
+            "■ 화성시 고시·공고 이력 (공고일 순 — 이것이 연표의 뼈대입니다)",
+        ]
+        for n in notices:
+            lines.append("  {} [{}] {}".format(
+                n.get("date", ""), n.get("dept", ""), n.get("title", "")))
+            if n.get("link"):
+                lines.append("        " + n["link"])
+        lines += [
+            "",
+            "  고시 제목의 문구가 곧 행정 절차입니다.",
+            "    열람·의견청취·공람  → 심의 전",
+            "    결정 고시·지형도면   → 확정",
+            "    실시계획 인가        → 착공 직전",
+            "    재결·수용·보상계획   → 보상 단계",
+            "    준공·사용승인        → 완료",
+            "  '지금까지의 흐름' 섹션은 이 목록을 날짜순으로 엮어 만드세요.",
+            "  고시는 확정된 사실입니다. 뉴스보다 먼저 근거로 쓰세요.",
+            "  다만 고시 제목에 없는 내용을 지어내지 마세요.",
+            "  배경 설명이 필요하면 웹 검색으로 확인하고 출처를 밝히세요.",
+        ]
+    if a.get("위도") and a.get("경도"):
+        lines.append("")
+        lines.append("  이 글에는 현안 위치를 표시한 개념도가 자동으로 삽입됩니다.")
+        lines.append("  위치를 글로 길게 설명하지 마세요. 어느 권역인지 한 줄이면 충분합니다.")
+        lines.append("  개념도는 실제 축척이 아니므로 거리나 소요시간을 단정하지 마세요.")
+
+    plans = a.get("관련계획") or []
+    if plans:
+        lines += [
+            "",
+            "■ 중기지방재정계획에 잡힌 예산 (단위: 억원)",
+        ]
+        for p in plans:
+            lines.append("  {} [{}]".format(
+                p.get("사업명", ""), p.get("출처", "")))
+            lines.append("      총사업비 {} · 이미 집행 {} · 남은 것 {}".format(
+                _eok(p.get("총사업비")), _eok(p.get("기투자")),
+                _eok(p.get("향후"))))
+            yrs = " / ".join("{}년 {}".format(y, _eok(v))
+                             for y, v in (p.get("연도별") or []))
+            if yrs:
+                lines.append("      " + yrs)
+            if p.get("사업개요"):
+                lines.append("      " + p["사업개요"][:110])
+        lines += [
+            "",
+            "  [재정계획을 다룰 때 반드시 지킬 것]",
+            "  - 이것은 예산 배정입니다. 확정된 사실이 아닙니다.",
+            "    '2028년에 4,257억이 잡혀 있다'는 맞지만",
+            "    '2028년에 4,257억을 쓴다'는 틀립니다.",
+            "  - 계획 시점을 밝히세요. 예: '2026~2030 계획에서는'",
+            "  - 집행 진도(이미 집행 ÷ 총사업비)는 쓸 만한 숫자입니다.",
+            "    다만 그것이 공정률은 아닙니다. 돈과 공사는 다릅니다.",
+            "  - 키워드로 걸러온 목록이라 무관한 사업이 섞일 수 있습니다.",
+            "    사업명이 이 글의 주제와 닿지 않으면 쓰지 마세요.",
+            "  - 고시나 회의록의 숫자와 다르면 그 차이를 그대로 쓰세요.",
+            "    어느 쪽이 맞다고 단정하지 말고, 출처를 밝혀 나란히 두세요.",
+            "    범위나 시점이 달라서 생기는 차이일 수 있습니다.",
+        ]
+
+    lines.append("")
+    return "\n".join(lines)        
+    
+def build_prompt(result, refs, today, plan=None, category="jisik"):
+    plan = plan or {}
+    rules = build_rules(category)
+
+    reader = plan.get("reader", "지식산업센터 투자 또는 입주를 검토 중인 사람")
+
+    # 실거래 트랙은 데이터가 주인공이므로 독자와 무관하게 항상 넘긴다.
+    # 그 외 트랙에서만 임차인 독자에게 매매 데이터를 빼준다.
+    if category in INFO_TRACKS:
+        realprice = ""
+        print("정보 전달 트랙 - 실거래 데이터는 넘기지 않습니다.")
+    elif "임차" in reader and category not in ("realprice", "auction"):
+        realprice = ""
+        print("임차인 독자 - 매매 실거래 데이터는 넘기지 않습니다.")
+    else:
+        realprice = load_realprice_summary()
+    headlines, hl_date = load_local_headlines(result.get("top_keyword", "")) if category == "local" else ("", "")
+    agenda_material = build_agenda_material(result) if category == "local" else ""
+    own_image_hint = build_own_image_hint(result)
+    auction = load_auction_summary() if category == "auction" else ""
+    refs_desc = "\n".join("- {t} ({l})".format(t=r["title"], l=r["link"]) for r in refs) or "(관련 참고 자료 없음)"
+    refs_rule = ("위에 제공된 참고 링크를 **제목과 URL을 함께** 마크다운 링크 형식으로 나열하세요. "
+                 "예: - [글 제목](https://blog.naver.com/...)  URL을 빼먹지 마세요."
+                 if refs else
+                 "**참고 링크가 없으므로 이 섹션을 통째로 생략하세요.** 없는 링크를 지어내지 마세요.")
+    kw = result["top_keyword"]
+
+    # 기본값이 '② 합격/불합격 기준' 이었는데 그런 유형은 목록에 없다.
+    # 유형 목록을 고치면서 기본값만 안 따라간 자국이다 (2026-10-26 확인).
+    # 기획이 비어 올 때만 쓰이는 값이라 조용히 어긋나 있었다.
+    output_type = plan.get("output_type") or "① 조건별 판단 기준표"
+    conclusion = plan.get("conclusion", "")
+    criteria = plan.get("criteria", [])
+    calc_tab = plan.get("calc_tab", "없음")
+    calc_url = plan.get("calc_url", "")
+    criteria_desc = "\n".join("   " + str(i) + ". " + s for i, s in enumerate(criteria[:3], 1)) or "   (미정)"
+
+    # 정보 전달 트랙(지역 개발·시의회)은 핵심 원칙과 구조가 다르다.
+    # 지산 글의 "이 글은 판단 도구다"를 그대로 적용하면
+    # 기획을 고쳐도 초안에서 다시 경고문으로 돌아간다.
+    is_info = category in INFO_TRACKS
+    council_block = build_council_section(load_council_rows()) if is_info else ""
+    # 2026-10-26: 라벨에 '3가지'가 박혀 있어 제목까지 '3가지'로 수렴했다.
+    # 가짓수는 내용이 정한다. 숫자는 소제목 규칙에서 따로 다룬다.
+    criteria_label = "이 글에서 짚을 사실" if is_info else "판단 기준"
+    title_history_block = build_title_history_block()
+    core_principle = INFO_CORE_PRINCIPLE if is_info else (
+        "가장 중요한 원칙: **이 글은 설명문이 아니라 판단 도구입니다.**\n"
+        "독자가 다 읽고 나서 \"그래서 나는 무엇을 하면 되는가\"에 스스로 답할 수 있어야 합니다.\n"
+        "사실을 나열하고 \"확인해보세요\"로 끝내는 글은 실패입니다.")
+
+    calc_block = ""
+    if calc_tab and calc_tab != "없음" and calc_url:
+        # 계산기 주소에 탭 이름을 붙여 해당 탭이 바로 열리게 한다
+        tab_url = calc_url if calc_url.endswith("/") else calc_url + "/"
+        tab_url += "?tab=" + urllib.parse.quote(calc_tab)
+
+        # 예전에는 "내 경우 계산해보기"를 별도 섹션으로 강제했다.
+        # 그러면 모델이 금리·월세·보증금을 지어내 5년 비용을 계산하고,
+        # 그 위에 "매수가 임차보다 6,500만원 더 든다" 같은 결론까지 세웠다.
+        # 근거 없는 숫자였다. 섹션을 없애고 링크 한 줄로 줄인다.
+        calc_block = f"""
+   - 이 섹션 끝에 계산기 링크를 **한 줄만** 덧붙이세요. 별도 섹션을 만들지 마세요.
+     [{calc_tab} 계산기에서 내 숫자로 확인하기]({tab_url})
+   - 링크 앞에 어떤 값을 넣으면 무엇이 나오는지 한 줄로 안내하세요.
+   - **가정한 금액으로 계산 예시를 만들지 마세요.** 금리·월세·보증금·관리비를
+     임의로 정해 "5년에 얼마" 같은 계산을 하지 마세요. 독자 조건과 다릅니다.
+   - 링크 뒤에 "의 OO 탭에" 같은 말을 덧붙이지 마세요. 링크만으로 탭이 열립니다.
+   - 계산기 결과는 참고용이라는 점을 한 문장으로 덧붙이세요."""
+
+    realprice_block = ""
+    if realprice:
+        realprice_block = f"""[실거래 데이터 — 직접 수집한 자료]
+{realprice}
+
+이 수치는 국토교통부 실거래가 공개시스템에서 직접 수집·집계한 것입니다.
+- 본문에서 시세를 언급할 때 이 데이터를 우선 사용하고, 출처를 "국토교통부 실거래가 공개시스템(직접 집계)"로 밝히세요.
+- 평당가는 모두 건물면적(계약면적) 기준입니다. 전용면적 기준이 아니라는 점을 한 번은 명시하세요.
+- 이 데이터에 없는 수치는 웹 검색으로 찾되, 그래도 확인이 안 되면 자리표시자로 남기세요.
+- 데이터에 있는 구분 이름을 그대로 쓰세요. 블록·유형 구분을
+  "도보 10분 이내" 같은 다른 기준으로 바꿔 부르지 마세요.
+  데이터에 없는 항목(도보 시간, 역세권 여부 등)으로 분류하지 마세요.
+- 거래 건수가 10건 미만이면 표에 건수를 함께 표기하고,
+  본문에서 참고치임을 밝히세요.
+- **한 단지나 한 블록이 전체 건수의 절반을 넘으면 그 사실을 반드시 밝히세요.**
+  그 경우 전체 중앙값은 사실상 그 단지 하나의 값입니다.
+  전체 중앙값과 특정 단지의 중앙값이 같은 숫자로 나오면 그것이 신호입니다.
+- 표에 구분 이름과 함께 각 항목의 거래 건수를 반드시 표기하세요.
+"""
+
+    news_block = ""
+    if headlines:
+        news_block = f"""[지역 뉴스 제목 — {hl_date} 수집분]
+{headlines}
+
+- 위 제목들은 {hl_date} 기준 최근 3주간 동탄 관련 기사에서 모은 것입니다.
+- 수집 시점이 오늘({today})보다 오래됐을 수 있습니다. 제목만 보고
+  "최근", "이번 주"라고 쓰지 말고, 검색으로 현재 상태를 확인한 뒤
+  확인된 시점을 명시해 쓰세요.
+- 이 중 이번 주제와 맞닿은 것을 골라 글의 출발점으로 삼으세요.
+  무엇이 실제로 진행되고 있는지가 여기 드러납니다.
+- 제목만 있으므로 구체적 내용은 웹 검색으로 확인하고, 확인된 것만 쓰세요.
+- 제목을 그대로 나열하지 마세요. 흐름을 읽고 하나의 이야기로 엮으세요.
+
+"""
+    auction_block = ""
+    if auction:
+        auction_block = f"""[경매 낙찰 데이터 — 직접 수집한 자료]
+{auction}
+
+이 수치는 법원경매정보에서 아파트형공장(지식산업센터) 물건을 직접 조회해 집계한 것입니다.
+- 본문의 모든 낙찰 관련 수치는 이 데이터만 쓰세요. 유료 경매정보 사이트나 추정치를 가져오지 마세요.
+- 매각가율은 감정가 대비 비율입니다. 실거래가 대비가 아니라는 점을 명시하세요.
+- 평당매각가는 건물면적(계약면적) 기준입니다.
+- 표본이 특정 단지에 몰려 있으면 그 사실을 밝히세요.
+- 실거래 데이터가 함께 주어졌다면, 경매가와 실거래가를 나란히 놓고 비교하세요.
+  이 비교가 이 글의 가장 큰 가치입니다.
+- 데이터에 있는 구분 이름을 그대로 쓰세요. 블록·유형 구분을
+  "도보 10분 이내" 같은 다른 기준으로 바꿔 부르지 마세요.
+  데이터에 없는 항목(도보 시간, 역세권 여부 등)으로 분류하지 마세요.
+- 거래 건수가 10건 미만이면 표에 건수를 함께 표기하고,
+  본문에서 참고치임을 밝히세요.
+"""
+
+    no_data_rule = ""
+    if not realprice and not auction and not is_info:
+        no_data_rule = """
+**수치 표 금지**: 이번 글에는 실거래·경매 데이터가 주어지지 않았습니다.
+가격·임대료·면적을 담은 비교표를 만들지 마세요. 예시나 가상 숫자로
+표를 채우는 것은 금지입니다. 대신 독자가 자기 숫자를 넣어 계산하는
+공식이나 체크리스트 형태로 만드세요.
+"""
+
+    # 트랙마다 글의 성격이 다르다. 실거래 분석은 판단 도구가 아니라 현황 파악 글이라
+    # "무슨 일이 있었나 → 판단 도구 → 판단 기준" 흐름이 맞지 않는다.
+    if category == "auction":
+        structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
+
+1. 제목(H1): 이번 글의 핵심 숫자가 드러나게. 낚시성 표현은 쓰지 마세요.
+
+2. ## 3초 요약
+   - 경매 데이터에서 가장 눈에 띄는 숫자를 **한 문장**으로 먼저 제시하세요.
+   - 이어서 "이 글이 필요한 사람"과 "필요 없는 사람"을 각각 한 줄씩 씁니다.
+
+3. ## 이번 집계 숫자
+   - 지역별 매각가율과 평당매각가를 표로 정리하세요.
+   - 표 아래에 이 표를 어떻게 읽어야 하는지 두세 문장으로 안내하세요.
+
+4. ## 유찰이 쌓이면 값은 얼마나 내려가는가
+   - 유찰 횟수별 매각가율을 표로 보여주세요.
+   - 어느 구간에서 값이 크게 떨어지는지 짚고, 그 의미를 설명하세요.
+   - 이것이 입찰 시점을 정하는 실질적 판단 재료입니다.
+
+5. ## 실거래가와 견주면
+   - 실거래 데이터가 함께 주어졌다면 경매 평당가와 실거래 평당가를 비교하세요.
+   - 감정가는 시세를 반영하지만 낙찰가는 그렇지 않다는 점을 숫자로 보여주세요.
+   - 실거래 데이터가 없으면 이 섹션을 생략하세요.
+
+6. ## 이 숫자를 읽을 때 주의할 점 (필수)
+   - 표본이 특정 단지에 몰려 있으면 밝히세요.
+   - 매각가율은 감정가 대비이며, 감정 시점과 매각 시점 사이에 시차가 있습니다.
+   - 낙찰가에는 명도비용·체납관리비·대지권 문제 해결 비용이 빠져 있습니다.
+   - 이 섹션을 형식적으로 쓰지 마세요. 한계를 밝히는 것이 이 글의 신뢰입니다.
+
+7. ## 내가 보는 물건은 어디쯤인가
+   - 독자가 관심 물건의 감정가·최저가·유찰횟수를 이 표에 대입하는 방법을 알려주세요.
+{calc_block}
+
+8. ## 직접 확인하는 법
+   - 법원경매정보(courtauction.go.kr)에서 같은 데이터를 조회하는 순서를 알려주세요.
+   - 물건상세검색 → 소재지 지정 → 용도 '아파트형공장' 선택 → 기간 설정까지 구체적으로요.
+
+9. ## 더 읽어보기
+   - {refs_rule}
+
+10. ## 이 데이터에 대하여
+   - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
+   - 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
+
+    elif category == "realprice":
+        structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
+
+1. 제목(H1): 이번 글의 핵심 숫자가 드러나게. 낚시성 표현은 쓰지 마세요.
+
+2. ## 3초 요약
+   - 이번 데이터에서 가장 눈에 띄는 숫자를 **한 문장**으로 먼저 제시하세요.
+   - 이어서 "이 글이 필요한 사람"과 "필요 없는 사람"을 각각 한 줄씩 씁니다.
+
+3. ## 이번 집계 숫자
+   - 위 실거래 데이터를 표로 정리하세요. 유형별 또는 블록별 중 이번 주제에 맞는 것을 고르세요.
+   - 표에 없는 숫자를 본문에서 지어내지 마세요.
+   - 표 아래에 이 표를 어떻게 읽어야 하는지 두세 문장으로 안내하세요.
+
+4. ## 눈에 띄는 것
+   - 특이값 2~3개를 골라 왜 그런지 따져보세요.
+   - 예: 어떤 유형이 유독 비싸거나 싸다, 어떤 블록이 예상과 다르다
+   - 추측은 추측이라고 밝히고, 확인 방법을 함께 제시하세요.
+
+5. ## 이 숫자를 읽을 때 주의할 점 (필수)
+   - 표본이 한 단지에 쏠려 있으면 그 사실을 밝히세요.
+   - 평당가가 건물면적(계약면적) 기준이라는 점을 명시하세요. 전용면적 기준으로는 크게 달라집니다.
+   - 거래 건수가 적은 항목은 참고치일 뿐임을 밝히세요.
+   - 이 섹션을 형식적으로 쓰지 마세요. 한계를 솔직히 밝히는 것이 이 글의 신뢰입니다.
+
+6. ## 내 물건은 어디쯤인가
+   - 독자가 자기 물건 숫자를 이 데이터와 견주어 볼 수 있는 방법을 알려주세요.
+   - 평당가 계산법(거래금액 ÷ 건물면적 ÷ 3.3058)을 한 줄로 안내하세요.
+{calc_block}
+
+7. ## 직접 확인하는 법
+   - 국토교통부 실거래가 공개시스템에서 같은 데이터를 조회하는 방법을 단계로 알려주세요.
+   - 지역 선택(화성시), 유형 선택, 기간 설정까지 구체적으로 쓰세요.
+   - '화성시 동탄구'처럼 없는 행정구역을 쓰지 마세요. 동탄은 구가 아닙니다.
+   - 독자가 우리 숫자를 검증할 수 있게 하는 것이 목적입니다.
+
+8. ## 더 읽어보기
+   - {refs_rule}
+
+9. ## 이 데이터에 대하여
+   - 출처, 집계 기간, 집계 방식을 2~3문장으로 밝히세요.
+   - 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
+
+    elif is_info:
+        # 지역 개발·시의회 트랙. 구조는 content_rules.py 에 있다.
+        structure_block = build_info_structure(category, refs_rule, council_block)
+
+    else:
+        structure_block = f"""**글 구조 — 아래 순서를 소제목으로 그대로 사용**
+
+1. 제목(H1): 독자가 얻어갈 산출물이 드러나게. 낚시성 표현은 쓰지 마세요.
+
+2. ## 3초 요약
+   - 핵심 결론을 **한 문장**으로 먼저 씁니다.
+   - 이어서 "이 글이 필요한 사람"과 "필요 없는 사람"을 각각 한 줄씩 씁니다.
+   - 필요 없는 사람을 명시하는 것은 독자의 시간을 아껴주기 위한 것이니 솔직하게 쓰세요.
+
+3. ## 무슨 일이 있었나
+   - 배경 사실을 씁니다. **한 문장에 하나의 정보만** 담으세요.
+   - 법조문을 그대로 옮기지 말고, 쪼개서 일상 언어로 풀어 쓰세요.
+
+4. ## {output_type.split(" — ")[0]} (실제 소제목은 내용에 맞게 구체적으로)
+   - 이 글의 핵심입니다. 위에 정한 산출물 유형에 맞는 도구를 만드세요.
+   - 표, 체크리스트, 순서도 중 형식은 내용에 맞게 고르되, 독자가 자기 상황을 대입할 수 있어야 합니다.
+   - 남의 사례를 읽고 끝나는 게 아니라, 독자가 자기 숫자·자기 조건을 넣어볼 수 있는 형태로 만드세요.
+
+5. ## {criteria_label} (소제목은 내용에 맞게 구체적으로. 아래 가짓수 규칙을 보세요)
+   - 위 [확정 기획]의 {criteria_label}을 **먼저 점검하세요.** 기획은 초안보다
+     앞서 만들어진 것이라 확인이 덜 된 항목이 섞입니다. 아래에 걸리는 항목은
+     [판단 기준] 규칙에 맞게 고쳐서 쓰세요. 고쳤다는 말은 본문에 쓰지 말고
+     고친 결과만 쓰세요.
+     · 출처 없는 기준선이 들어간 항목 — "3배를 넘는지", "50% 미만이면"
+     · 독자가 그 자리에서 확인할 수 없는 항목 — 등기부 여러 건을 떼야 하는 것,
+       국토부 실거래가에 나오지 않는 매도인·호실을 알아야 하는 것
+     · 단위가 다른 값을 배수로 비교하는 항목 — 매물 건수 ÷ 거래 건수
+   - 남긴 항목은 각각 왜 그것이 중요한지 2~3문장으로 풀고,
+     **확인 경로(사이트 → 메뉴 → 무엇을 고를지)를 함께 적으세요.**
+   - **가짓수는 2~4개 중 내용에 맞게 정하세요.** 기획이 넘긴 개수를 채우려고
+     위에서 걸러낸 항목을 억지로 남기지 마세요. 걸러낸 뒤 남은 것만 씁니다.
+     다룰 내용이 더 있으면 다른 섹션에 넣으세요.
+   - 소제목에 숫자를 넣을지도 스스로 정하세요. 넣는다면 **실제 항목 수와
+     반드시 같아야 합니다.** 최근 글이 계속 '3가지'였다면 이번에는 다르게 가세요.
+   - "수익률 4% 이상이면 매수" 같은 단정적 투자 권유는 하지 마세요.
+     다만 "전용률 50% 미만이면 실사용에 부적합" 같은 사실 기반의 판단 기준은 제시하세요.
+   - 대신 "이것이 정리되지 않으면 결론을 내리기 이르다"는 톤을 유지하세요.
+{calc_block}
+
+6. ## 동탄은 어떤가
+   - 동탄 지역에 한정한 내용을 한 단락 이상 씁니다. 이 블로그를 봐야 할 이유가 되는 부분입니다.
+   - 검색으로 확인된 동탄 관련 사실이 없으면, 지역 특성상 어떤 점을 따로 확인해야 하는지라도 구체적으로 쓰세요.
+
+7. ## 이 판단이 틀릴 수 있는 경우
+   - 위 결론이 적용되지 않는 상황, 반대 견해, 이 글의 한계를 솔직하게 2~3가지 씁니다.
+   - 이 섹션은 신뢰를 만드는 부분이니 형식적으로 쓰지 마세요.
+
+8. ## 더 읽어보기
+   - {refs_rule}
+
+9. ## 이 주제를 고른 이유
+   - 이 주제를 다루게 된 배경을 2~3문장으로 짧게 씁니다. 키워드 관심도 표는 넣지 마세요. 독자가 쓸 내용이 아닙니다."""
+
+    prompt = f"""당신은 경기도 동탄 지역 지식산업센터 전문 공인중개사의 블로그 글을 씁니다.
+오늘 날짜는 {today} 입니다.
+
+이번 글의 기획은 이미 확정되어 있습니다. 반드시 이 기획대로 쓰세요.
+
+[확정 기획]
+- 독자: {reader} (이 한 사람만 겨냥합니다. 다른 독자층을 위한 내용은 넣지 마세요.)
+- 산출물 유형: {output_type}
+- 핵심 결론: {conclusion}
+- {criteria_label}:
+{criteria_desc}
+- 이번 글의 주제 키워드: {kw}
+
+[참고 링크 후보 (네이버 블로그)]
+{refs_desc}
+
+{realprice_block}
+{agenda_material}
+{news_block}
+{auction_block}
+{council_block}
+──────────────────────────────
+{core_principle}
+
+{title_history_block}
+
+**웹 검색 활용**
+- 웹 검색 도구로 이 주제의 최신 법령·세율·정책·시세를 오늘 날짜 기준으로 직접 조사해 실제 숫자로 쓰세요.
+- 검색으로 확인한 내용만 숫자로 쓰고, 지어내지 마세요.
+- 확인이 어렵거나 변경 가능성이 높은 부분은 <mark>이 태그</mark>로 감싸세요. 확실한 정보에는 쓰지 마세요.
+- 근거 링크는 해당 내용 바로 아래에 인용부호(>)로 배치하세요. 예: > 근거: 국세청 「OOO」 (https://...)
+- 공식 출처만 사용하세요(국가법령정보센터, 국세청, 지자체, 통계청, 언론). 나무위키·위키백과·개인 블로그는 근거로 쓰지 마세요.
+- **링크는 그 내용이 실제로 있는 페이지를 가리켜야 합니다.** 사이트 대문 주소만 달지 마세요.
+  (https://www.easylaw.go.kr 은 어떤 조문도 가리키지 않습니다.)
+  해당 페이지를 못 찾으면 링크 없이 출처 이름과 조문 번호만 쓰세요. 그편이 낫습니다.
+- 법령·세율은 국가법령정보센터나 국세청을 1차 근거로 쓰세요.
+  로펌 뉴스레터나 법률 뉴스 모음 사이트를 법령 근거로 쓰지 마세요. 2차 출처입니다.
+
+**일정·날짜 서술 규칙 (반드시 지킬 것)**
+- 오늘은 {today} 입니다. 모든 날짜를 이 날짜와 비교한 뒤 쓰세요.
+- 이미 지난 날짜를 "~할 예정", "~를 목표로", "~할 전망"처럼 미래형으로 쓰지 마세요.
+  당신의 학습 시점에는 미래였던 일도 오늘 기준으로는 지났을 수 있습니다.
+- 개통·준공·착공·시행·입주 일정은 반드시 웹 검색으로 오늘 기준 현재 상태를
+  확인한 뒤에만 쓰세요. 기억에 있는 일정을 그대로 옮기지 마세요.
+- 검색해도 현재 상태가 확인되지 않으면 날짜를 못박지 말고,
+  "여러 차례 미뤄져 왔다"처럼 시간이 지나도 틀리지 않는 문장으로 쓰세요.
+- 근거로 든 기사가 일주일보다 오래됐으면 "최근", "이번 주", "알려졌다" 같은
+  새 소식 표현을 쓰지 마세요. 사실관계만 서술하세요.
+- 근거 링크는 그 문장을 실제로 뒷받침하는 것만 다세요.
+  2024년 개통 사실을 다룬 자료를 2026년 일정의 근거로 달지 마세요.
+
+{no_data_rule}
+{structure_block}
+
+**이미지 삽입**: 본문 중 정확히 2곳에 `[이미지: 한글설명 | search: 영어검색키워드]` 형식으로 넣으세요.
+`| search:` 뒤의 영어 키워드는 필수입니다. 이것이 없으면 사진이 삽입되지 않습니다.
+영어 키워드는 지역명 없이 보편적인 장면으로 쓰세요. 스톡사진 사이트에서 검색되는 말이어야 합니다.
+  좋은 예: modern office interior / industrial building exterior / business meeting
+  나쁜 예: dongtan technovalley (한국 지역명은 스톡사진에 없습니다)
+한글 설명은 **사진에 실제로 담길 만한 일반적인 장면**으로 쓰세요.
+스톡 사진이라 특정 기관·장소·행사와 일치하지 않습니다.
+"화성시의회 예산결산특별위원회 회의 장면"처럼 쓰면 없는 사실을 만드는 것입니다.
+"회의실 내부", "서류와 계산기"처럼 쓰세요.
+독립된 문단으로 배치하고, 관심도 수치를 그래프로 만들지 마세요.
+
+{own_image_hint}
+
+**중복 금지**: 같은 사실·수치를 여러 섹션에서 표현만 바꿔 반복하지 마세요. 각 섹션은 새로운 내용을 더해야 합니다.
+
+**가독성**: 한 문단 최대 3~4줄. 나열 정보는 반드시 불릿. 각 섹션의 핵심 결론 문장은 볼드.
+
+**쉬운 언어**: 전문 용어는 첫 등장 시 괄호로 쉬운 설명을 붙이세요. 예: LTV(집값 대비 대출 한도 비율), 무피(프리미엄 없이 분양가에 되파는 매물).
+
+**포지셔닝**: 글쓴이는 향후 이 분야 중개사로 개업할 예정입니다. 현장 감각이 묻어나는 서술을 한두 군데 자연스럽게 넣되, "문의 주세요", "상담 환영", 특정 매물 추천, 글 말미 상담 유도 같은 노골적 영업 표현은 절대 쓰지 마세요. 마무리는 정보 요약으로 끝내세요.
+
+**SEO 메인 키워드는 "{kw}" 입니다.** 아래 SEO 규칙의 "메인 키워드"는 모두 이것을 가리킵니다.
+
+{rules}
+
+**금지 표현**: "~할 수 있습니다", "~에 영향을 줍니다", "~가 중요합니다" 같은 조건부·당위 서술로 문단을 끝내지 마세요. 반드시 구체적 숫자나 확인 방법으로 끝내세요. 근거 없는 별점(★)이나 추천도 표도 쓰지 마세요.
+
+**시세 수치**: 웹 검색으로 확인되지 않은 시세는 임의로 지어내지 말고 <mark>[평당 분양가 확인 필요]</mark> 형태의 자리표시자로 남기세요.
+
+전체 분량 2000~3000자, 전문성 있으면서 친근한 톤.
+마크다운 텍스트만 출력하고 다른 설명은 붙이지 마세요."""
+    return prompt
+
+
+def send_telegram_message(text, timeout=20):
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
+    body = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": text}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        res.read()
+
+
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+
+
+def generate_score_chart_base64(rows, title="키워드별 관심도 스코어"):
+    """관심도 데이터를 막대그래프로 그려 base64 PNG data URI로 반환한다."""
+    try:
+        for font_path in ["/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                           "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]:
+            if os.path.exists(font_path):
+                fm.fontManager.addfont(font_path)
+                plt.rcParams["font.family"] = fm.FontProperties(fname=font_path).get_name()
+                break
+        plt.rcParams["axes.unicode_minus"] = False
+
+        keywords = [r["keyword"] for r in rows]
+        scores = [r["score"] for r in rows]
+        colors = ["#1F3C88" if s == max(scores) else "#9FB3D9" for s in scores]
+
+        fig, ax = plt.subplots(figsize=(7, 3.2), dpi=150)
+        bars = ax.barh(keywords, scores, color=colors)
+        ax.invert_yaxis()
+        ax.set_xlabel("관심도 스코어")
+        ax.set_title(title, fontsize=13, color="#1F3C88", weight="bold")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        for bar, score in zip(bars, scores):
+            ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height() / 2,
+                    "{:.2f}".format(score), va="center", fontsize=10, color="#333")
+        fig.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode("utf-8")
+        return "data:image/png;base64," + b64
+    except Exception as e:
+        print("차트 생성 실패: " + str(e))
+        return None
+
+
+def fetch_unsplash_image(query, timeout=15):
+    """Unsplash에서 쿼리에 맞는 실제 사진 1장을 검색해 이미지 URL을 반환한다. 실패 시 None."""
+    if not UNSPLASH_ACCESS_KEY:
+        return None
+    url = "https://api.unsplash.com/search/photos?" + urllib.parse.urlencode(
+        {"query": query, "per_page": 1, "orientation": "landscape"}
+    )
+    req = urllib.request.Request(url, headers={"Authorization": "Client-ID " + UNSPLASH_ACCESS_KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.load(res)
+        results = data.get("results", [])
+        if results:
+            return results[0]["urls"]["regular"], results[0].get("user", {}).get("name", "Unsplash")
+        return None
+    except Exception as e:
+        print("Unsplash 검색 오류(" + query + "): " + str(e))
+        return None
+
+
+# ── 우리가 가진 공식 이미지 ──────────────────────
+#
+# 2026-10-29 추가. 트램 노선도 한 장이 스톡사진 백 장보다 낫다.
+# Unsplash 보다 **먼저** 찾는다.
+#
+# 고르는 조건은 두 낱말이 함께 있을 때다 — 주제(트램·도시철도)와
+# 종류(노선도·조감도·추진현황). 한쪽만 보면 GTX 노선도 설명에도
+# 트램 그림이 붙는다.
+#
+# 저장소가 공개라 raw 주소가 그대로 열린다 (2026-10-29 확인).
+# 비공개로 바꾸면 이 주소가 죽는다. 그때는 OWN_IMAGE_BASE 를
+# 화성시 서버 쪽으로 갈아끼운다.
+OWN_IMAGE_BASE = os.environ.get(
+    "OWN_IMAGE_BASE",
+    "https://raw.githubusercontent.com/jay70park-cyber/"
+    "jisik-blog-auto/main/docs")
+
+# 수집기(collect_tram_status.py)가 쌓아 두는 주간 추진현황.
+# 여기 있으면 화성시 서버 주소를 그대로 쓴다 — 우리가 파일을 올릴
+# 필요도, 새 회차마다 코드를 고칠 필요도 없다.
+TRAM_STATUS_CSV = os.path.join("data", "tram_status.csv")
+
+
+def latest_tram_status():
+    """가장 최근 추진현황 (주소, 캡션, 출처). 없으면 None."""
+    if not os.path.exists(TRAM_STATUS_CSV):
+        return None
+    try:
+        with open(TRAM_STATUS_CSV, encoding="utf-8-sig", newline="") as f:
+            rows = [r for r in csv.DictReader(f)
+                    if (r.get("이미지주소") or "").strip()]
+    except Exception as e:
+        print("추진현황 목록을 못 읽었습니다: " + str(e))
+        return None
+    if not rows:
+        return None
+    r = max(rows, key=lambda x: x.get("등록일", ""))
+    return (r["이미지주소"].strip(),
+            (r.get("회차") or "동탄도시철도 사업추진 현황").strip(),
+            "화성시 트램건설추진단")
+
+
+OWN_IMAGES = [
+    # (주제 낱말, 종류 낱말, 파일 경로, 캡션, 출처, 수집본을 먼저 볼지)
+    (("트램", "도시철도"), ("노선도", "노선", "구간도", "단계"),
+     "tram/tram-route.jpg",
+     "동탄도시철도 노선도 — 망포-오산선 16.58km · 병점-동탄2신도시선 17.82km",
+     "화성시 트램건설추진단", None),
+    (("트램", "도시철도"), ("추진현황", "진행 상황", "사업추진", "현황"),
+     # 주마다 새 회차가 나온다. 파일명에 주차를 박으면 매주 이 줄을
+     # 고쳐야 하고, 안 고치면 글은 최신인데 그림만 과거가 된다.
+     # 같은 이름으로 덮어쓰고, 몇 주치인지는 그림 안에 찍힌 것을 믿는다.
+     # 캡션에도 주차를 적지 않는다 — 같은 이유로 어긋난다.
+     "tram/tram-status-latest.png",
+     "동탄도시철도 사업추진 현황",
+     "화성시 트램건설추진단", "tram_status"),
+    (("트램", "도시철도"), ("정거장", "승강장", "역사"),
+     "tram/tram-station.jpg",
+     "동탄트램 정거장 조감도",
+     "화성시 트램건설추진단", None),
+    (("트램", "도시철도"), ("차량", "전동차"),
+     "tram/tram-vehicle.jpg",
+     "동탄트램 차량 조감도",
+     "화성시 트램건설추진단", None),
+]
+
+
+def pick_own_image(kor_part):
+    """설명에 맞는 우리 이미지가 있으면 (주소, 캡션, 출처), 없으면 None.
+
+    수집본이 있는 항목은 **그쪽을 먼저 본다.** 추진현황은 매주 바뀌어서
+    저장소 사본은 금방 낡는다. 수집기가 안 돌았거나 비어 있으면
+    저장소에 올려둔 것으로 물러난다 — 그림이 통째로 빠지는 것보다 낫다.
+    """
+    s = str(kor_part or "")
+    for topics, kinds, path, caption, source, live in OWN_IMAGES:
+        if not (any(t in s for t in topics) and any(k in s for k in kinds)):
+            continue
+        if live == "tram_status":
+            got = latest_tram_status()
+            if got:
+                return got
+            print("추진현황 수집본이 없어 저장소 사본을 씁니다.")
+        return OWN_IMAGE_BASE.rstrip("/") + "/" + path, caption, source
+    return None
+
+
+def build_own_image_hint(result):
+    """전용 이미지가 있는 주제면 프롬프트에 알린다. 없으면 빈 문자열.
+
+    이 안내가 없으면 모델은 전용 이미지가 있는 줄 모르고
+    스톡사진용 설명만 쓴다. 그러면 위 pick_own_image 가 영영 안 걸린다.
+    """
+    hay = " ".join(str(x or "") for x in (
+        (result or {}).get("top_keyword"),
+        (result or {}).get("category_display"),
+        ((result or {}).get("agenda") or {}).get("현안명"),
+    ))
+    picked = [row for row in OWN_IMAGES
+              if any(t in hay for t in row[0])]
+    if not picked:
+        return ""
+    lines = ["**이 주제에는 우리가 가진 공식 이미지가 있습니다.**",
+             "스톡사진보다 이것이 훨씬 낫습니다. 아래 중 **두 장**을 고르세요.",
+             "한글 설명에 주제어와 종류어를 **함께** 넣어야 그 그림이 들어갑니다.",
+             ""]
+    for topics, kinds, _path, caption, _src in picked:
+        lines.append("- {}".format(caption))
+        lines.append("    설명에 두 낱말을 함께 — '{}' + '{}'".format(
+            topics[0], kinds[0]))
+    lines += [
+        "",
+        "예: [이미지: 동탄트램 노선도 | search: tram route map]",
+        "`| search:` 는 그대로 두세요. 전용 이미지를 못 찾았을 때만 쓰입니다.",
+        "이 그림들은 화성시 공식 자료라 **없는 장면을 만들지 않습니다.**",
+        "위 스톡사진 주의사항(특정 기관·장소를 쓰지 말라)은 여기 해당하지 않습니다.",
+    ]
+    return "\n".join(lines)
+
+
+def render_images(markdown_text, rows):
+    """[이미지: 한글설명 | search: english keywords] 패턴을 실제 이미지로 치환한다.
+    - '스코어'/'그래프'/'차트'/'비교' 등 데이터 시각화 요청은 직접 그린 그래프로 대체
+    - 그 외에는 Unsplash에서 실사진을 검색해 삽입 (UNSPLASH_ACCESS_KEY 없으면 기존 플레이스홀더 유지)
+    """
+    def _replace(match):
+        full_desc = match.group(1).strip()
+        kor_part = full_desc.split("|")[0].strip()
+        search_query = full_desc
+        if "search:" in full_desc:
+            search_query = full_desc.split("search:")[-1].strip()
+
+        if any(k in kor_part for k in ["스코어", "그래프", "차트", "비교", "지수"]) and rows:
+            chart = generate_score_chart_base64(rows)
+            if chart:
+                return ('<figure style="margin:20px 0;text-align:center;">'
+                        '<img src="' + chart + '" width="430" style="width:430px;max-width:100%;border-radius:8px;" alt="' + kor_part + '">'
+                        '<figcaption style="font-size:15px;color:#999;margin-top:6px;">' + kor_part + '</figcaption>'
+                        '</figure>')
+
+        own = pick_own_image(kor_part)
+        if own:
+            own_url, own_caption, own_source = own
+            print("전용 이미지 사용: " + own_caption)
+            return ('<figure style="margin:20px 0;text-align:center;">'
+                    '<img src="' + own_url + '" width="430" '
+                    'style="width:430px;max-width:100%;border-radius:8px;" '
+                    'alt="' + own_caption + '">'
+                    '<figcaption style="font-size:14px;color:#888;margin-top:6px;">'
+                    + own_caption + '<br>출처: ' + own_source + '</figcaption>'
+                    '</figure>')
+
+        photo = fetch_unsplash_image(search_query)
+        if photo:
+            photo_url, author = photo
+            return ('<figure style="margin:20px 0;text-align:center;">'
+                    '<img src="' + photo_url + '" width="430" style="width:430px;max-width:100%;border-radius:8px;" alt="' + kor_part + '">'
+                    '<figcaption style="font-size:14px;color:#aaa;margin-top:6px;">사진: Unsplash / ' + author + '</figcaption>'
+                    '</figure>')
+
+        return ('<div style="margin:16px 0;padding:14px 16px;background:#f2f2f2;border:1px dashed #999;'
+                'border-radius:6px;color:#666;font-size:17px;">📷 이미지 제안: ' + kor_part + '</div>')
+
+    return re.sub(r"\[이미지:\s*(.+?)\]", _replace, markdown_text)
+
+
+def build_score_table_html(rows):
+    """키워드별 관심도 데이터를, 우측정렬+소수점자릿수통일+천단위콤마 규칙에 맞춘 HTML 표로 만든다.
+    (붙여넣기 편집기 호환을 위해 클래스 없이 전부 인라인 style로 작성)"""
+    if not rows:
+        return ""
+    trend_decimals = 2
+    score_decimals = 2
+    th_style = "border:1px solid #ddd;padding:9px 6px;background:#EEF2FB;color:#1F3C88;font-weight:700;font-size:14px;white-space:nowrap;"
+    th_style_right = th_style + "text-align:right;"
+    td_style = "border:1px solid #ddd;padding:9px 12px;font-size:16px;word-break:keep-all;"
+    td_style_right = td_style + "text-align:right;"
+
+    body_rows = ""
+    for r in rows:
+        blog_s = "{:,}".format(r["blog"])
+        cafe_s = "{:,}".format(r["cafe"])
+        trend_s = "{:,.{p}f}".format(r["trend"], p=trend_decimals)
+        score_s = "{:.{p}f}".format(r["score"], p=score_decimals)
+        body_rows += (
+            '<tr><td style="' + td_style + '">' + r["keyword"] + "</td>"
+            '<td style="' + td_style_right + '">&nbsp;' + blog_s + "</td>"
+            '<td style="' + td_style_right + '">&nbsp;' + cafe_s + "</td>"
+            '<td style="' + td_style_right + '">&nbsp;' + trend_s + "</td>"
+            '<td style="' + td_style_right + '">&nbsp;' + score_s + "</td></tr>"
+        )
+    # 열 너비를 명시하지 않으면 네이버 편집기가 자체적으로 재계산해 키워드 열이 좁아지고 줄바꿈이 생긴다.
+    # colgroup + th의 width를 모두 지정해 원본과 동일한 비율을 유지한다.
+    colgroup = ('<colgroup><col style="width:40%"><col style="width:15%"><col style="width:15%">'
+                '<col style="width:15%"><col style="width:15%"></colgroup>')
+    return (
+        '<table align="center" style="border-collapse:collapse;width:100%;table-layout:fixed;">'
+        + colgroup +
+        '<thead><tr>'
+        '<th width="40%" style="' + th_style + 'width:40%;">키워드</th>'
+        '<th width="15%" style="' + th_style_right + 'width:15%;">블로그 건수</th>'
+        '<th width="15%" style="' + th_style_right + 'width:15%;">카페 건수</th>'
+        '<th width="15%" style="' + th_style_right + 'width:15%;">검색트렌드지수</th>'
+        '<th width="15%" style="' + th_style_right + 'width:15%;">관심도스코어</th>'
+        "</tr></thead><tbody>" + body_rows + "</tbody></table>"
+    )
+
+
+# 붙여넣기 편집기(네이버 블로그 등)는 <style> 블록의 클래스 스타일을 대부분 걸러내고,
+# 각 태그에 직접 박힌 인라인 style만 안정적으로 보존한다. 그래서 아래는 전부 인라인 방식으로 작성한다.
+# 폰트 크기 전반 1.3배 확대 / margin 대신 spacer와 padding 사용 (네이버 편집기가 margin을 제거하므로)
+_H1_STYLE = "font-size:29px;line-height:1.4;color:#1F3C88;font-weight:800;padding:0;"
+_P_STYLE = "line-height:1.8;color:#222;font-size:21px;"
+_TABLE_STYLE = "border-collapse:collapse;width:100%;font-size:18px;"
+_TH_BASE = "border:1px solid #ddd;padding:10px 12px;background:#EEF2FB;color:#1F3C88;font-weight:700;"
+_TD_BASE = "border:1px solid #ddd;padding:10px 12px;"
+_MARK_STYLE = "background:#fff176;padding:1px 3px;border-radius:2px;"
+# 근거 박스: blockquote 대신 div (네이버가 blockquote를 자체 인용구 스타일로 덮어씀)
+_BLOCKQUOTE_STYLE = ("padding:12px 16px;background:#f4f6fa;border-left:5px solid #C9932F;"
+                     "border-radius:6px;color:#555;font-size:17px;line-height:1.65;")
+_STRONG_STYLE = "color:#B8451D;font-weight:700;"
+_LI_STYLE = "line-height:1.8;margin:4px 0;font-size:21px;"
+
+# 소제목: border-bottom(구분선)이 네이버에서 본문 폭 전체로 튀거나 사라지므로 아예 쓰지 않고,
+# 배경 도형(박스) 안에 넣어 강조한다. 위쪽 간격은 margin 대신 spacer div로 확보.
+_H2_BOX_STYLE = ("background:#EEF2FB;border-left:7px solid #1F3C88;border-radius:8px;"
+                 "padding:12px 18px;font-size:23px;font-weight:800;color:#1F3C88;line-height:1.35;")
+_H3_BOX_STYLE = ("background:#F5F6FA;border-left:5px solid #9FB3D9;border-radius:6px;"
+                 "padding:9px 14px;font-size:20px;font-weight:700;color:#1F3C88;line-height:1.35;")
+
+
+def _spacer(height_px):
+    """네이버 편집기가 margin을 제거해도 살아남는 여백용 요소."""
+    return ('<div style="height:' + str(height_px) + 'px;line-height:' + str(height_px)
+            + 'px;font-size:1px;">&nbsp;</div>')
+
+
+def _inline_styles(html):
+    """마크다운 변환 결과의 태그들에 인라인 style을 직접 삽입한다 (클래스 대신).
+    소제목(h2/h3)은 네이버에서 구분선/여백이 깨지므로 배경 도형 div로 치환한다."""
+    html = re.sub(r"<h1>", '<h1 style="' + _H1_STYLE + '">', html)
+
+    # h2 -> spacer + 박스 div (위 본문과의 간격 확보 + 강조)
+    def _h2_box(m):
+        return _spacer(22) + '<div style="' + _H2_BOX_STYLE + '">' + m.group(1) + "</div>" + _spacer(10)
+
+    def _h3_box(m):
+        return _spacer(16) + '<div style="' + _H3_BOX_STYLE + '">' + m.group(1) + "</div>" + _spacer(8)
+
+    html = re.sub(r"<h2>(.*?)</h2>", _h2_box, html, flags=re.DOTALL)
+    html = re.sub(r"<h3>(.*?)</h3>", _h3_box, html, flags=re.DOTALL)
+
+    html = re.sub(r"<p>", '<p style="' + _P_STYLE + '">', html)
+    # 표는 중앙 정렬 (align 속성도 함께 넣어 편집기가 style을 지워도 유지되도록)
+    html = re.sub(r"<table>", '<table align="center" style="' + _TABLE_STYLE + '">', html)
+    html = re.sub(r"<mark>", '<mark style="' + _MARK_STYLE + '">', html)
+    # <blockquote>는 네이버 편집기가 자체 인용구 스타일로 강제 변환해 배경색이 사라지므로,
+    # 대신 <div>로 치환해 우리가 지정한 배경/테두리가 그대로 유지되게 한다.
+    html = re.sub(r"<blockquote>", '<div style="' + _BLOCKQUOTE_STYLE + '">', html)
+    html = re.sub(r"</blockquote>", "</div>", html)
+    html = re.sub(r"<strong>", '<strong style="' + _STRONG_STYLE + '">', html)
+    html = re.sub(r"<li>", '<li style="' + _LI_STYLE + '">', html)
+
+    def _merge_th(m):
+        existing = (m.group(1) or "").strip()
+        return '<th style="' + _TH_BASE + existing + '">'
+
+    def _merge_td(m):
+        existing = (m.group(1) or "").strip()
+        return '<td style="' + _TD_BASE + existing + '">'
+
+    html = re.sub(r'<th(?:\s+style="([^"]*)")?>', _merge_th, html)
+    html = re.sub(r'<td(?:\s+style="([^"]*)")?>', _merge_td, html)
+    return html
+
+
+def render_naver_html(markdown_text, title="블로그 초안", category_display=None,
+                      top_keyword=None, rows=None, table_position="top",
+                      track="jisik", agenda=None):                    
+    """마크다운을 네이버 블로그 붙여넣기에 적합한, 인라인 스타일 기반 HTML로 변환한다."""
+    # [이미지: 설명] 표시를 실제 그래프/사진으로 치환 (실패 시 안내 박스로 대체)
+    prepped = render_images(markdown_text, rows)
+    body_html = md_lib.markdown(prepped, extensions=["tables", "nl2br"])
+    body_html = _inline_styles(body_html)
+
+    # "핵심 인사이트" 문단을, 단순한 구조의 색상 박스로 변환 (flexbox/의사요소 없이 -> 붙여넣기에도 안정적)
+    def _wrap_insight(match):
+        inner = match.group(1)
+        # 글 전체에서 가장 중요한 문단이므로, 배경만이 아니라 테두리까지 두른 강조 블록으로 처리한다.
+        outer_style = ("border:3px solid #1F3C88;border-radius:14px;background:#FFFFFF;"
+                       "padding:0;overflow:hidden;")
+        header_style = ("background:#1F3C88;color:#FFFFFF;font-size:17px;font-weight:800;"
+                        "letter-spacing:1px;padding:10px 20px;")
+        body_style = ("padding:18px 20px;color:#222;line-height:1.85;font-size:21px;background:#F7F9FF;")
+        return (
+            _spacer(14)
+            + '<div style="' + outer_style + '">'
+            + '<div style="' + header_style + '">🗣️ 핵심 인사이트</div>'
+            + '<div style="' + body_style + '">' + inner + "</div>"
+            + "</div>"
+            + _spacer(14)
+        )
+
+    body_html = re.sub(
+        r'<p style="[^"]*"><strong[^>]*>핵심 인사이트</strong>:?(.*?)</p>',
+        _wrap_insight,
+        body_html,
+        count=1,
+        flags=re.DOTALL,
+    )
+
+    # 제목(H1) 바로 다음에, 주제 소개 문구 + 근거 표를 자동 삽입 (Claude가 아닌 코드가 직접 생성 -> 매주 정확함)
+    # 카테고리명은 블로그 카테고리로 이미 구분되므로 문장에 넣지 않고, 데이터 근거만 자연스럽게 밝힌다.
+    intro_html = ""
+    if top_keyword:
+        table_html = build_score_table_html(rows) if rows else ""
+        if table_position == "none":
+            # 키워드 관심도 표는 내부 수집 데이터다. 독자에게 보여줄 것이 아니라
+            # 본문에서 뺀다. 표가 필요하면 텔레그램 메시지에서 본다.
+            table_html = ""
+        elif table_position == "bottom":
+            body_html = body_html + table_html
+            table_html = ""
+        intro_style = "background:#F5F6FA;border-radius:10px;padding:16px 18px;color:#444;font-size:19px;line-height:1.7;"
+        strong_style = "color:#1F3C88;font-weight:700;"
+        
+        if track == "council":
+            intro_body = (
+                "화성특례시의회 회의록을 최근 한 달치 훑어 정리했습니다.<br>"
+                "공식 보도자료에는 나오지 않던 내용을 중심으로 추렸습니다."
+            )
+        elif track == "local" and agenda:
+            intro_body = (
+                "동탄에서 계속 지켜보고 있는 지역 현안 가운데 "
+                '<strong style="' + strong_style + '">' + agenda.get("현안명", "") + "</strong> "
+                "소식을 정리했습니다.<br>"
+                "지금 어디까지 왔고 무엇이 아직 정해지지 않았는지 짚어봤습니다."
+            )
+        else:
+            # 소재는 검색 1위가 아니라 카테고리 순환과 쿨다운으로 고른다.
+            # "가장 많았습니다"는 사실이 아니다.
+            intro_body = (
+                "이번 글에서는 "
+                '<strong style="' + strong_style + '">' + top_keyword + "</strong> "
+                "주제를 다룹니다.<br>"
+                "실제로 확인해야 할 부분과 놓치기 쉬운 고려사항을 정리해 봤습니다."
+            )
+        intro_html = ('<p style="' + intro_style + '">' + intro_body + "</p>") + table_html
+        body_html = body_html.replace("</h1>", "</h1>\n" + intro_html, 1)
+
+    # 지역 현안 글에는 위치 개념도를 붙인다.
+    # 독자가 가장 먼저 궁금해하는 것이 "그게 어디냐" 이기 때문이다.
+    # 좌표가 없으면 아무것도 붙지 않는다.
+    if track == "local" and agenda:
+        try:
+            map_html = make_map.build_map_figure(agenda)
+        except Exception as e:
+            print("지도 생성 실패(본문에는 영향 없음): " + repr(e))
+            map_html = ""
+        if map_html:
+            # '지금까지의 흐름' 소제목 앞에 둔다. 흐름을 읽기 전에
+            # 위치를 먼저 보여주는 편이 이해가 빠르다.
+            anchor = "지금까지의 흐름"
+            idx = body_html.find(anchor)
+            if idx > 0:
+                cut = body_html.rfind("<div", 0, idx)
+                if cut > 0:
+                    body_html = body_html[:cut] + map_html + body_html[cut:]
+                else:
+                    body_html += map_html
+            else:
+                body_html += map_html
+
+    html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{title}</title>
+</head>
+<body style="font-family:-apple-system,'Malgun Gothic',sans-serif;font-size:21px;line-height:1.8;color:#222;max-width:820px;margin:24px auto;padding:0 16px;">
+{body_html}
+</body>
+</html>"""
+    return html
+
+
+def generate_thumbnail_copy(title, category, timeout=60):
+    """제목을 바탕으로 썸네일용 짧은 카피(3줄 헤드라인/강조구/보조문구)를 만든다."""
+    prompt = f"""아래는 블로그 글 제목입니다.
+
+제목: {title}
+카테고리: {category}
+
+이 글의 썸네일에 넣을 문구를 만들어 JSON으로만 출력하세요. 다른 설명은 붙이지 마세요.
+
+{{
+  "headline": "썸네일용 짧은 제목. 반드시 \\n 으로 2~3줄로 나눌 것. 각 줄은 공백 포함 12자 이내. 원제목을 짧고 강하게 압축할 것",
+  "highlight": "headline 안에 실제로 들어있는 문구 중 강조할 부분. 반드시 한 줄 안에 온전히 포함되는 연속된 문자열이어야 함(줄바꿈을 걸치면 안 됨). 6자 이내 권장",
+  "sub": "보조 문구 한 줄. 20자 이내"
+}}"""
+    url = "https://api.anthropic.com/v1/messages"
+    body = json.dumps(
+        {"model": MODEL, "max_tokens": 500, "messages": [{"role": "user", "content": prompt}]},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.load(res)
+        text = "".join(p.get("text", "") for p in data.get("content", []) if p.get("type") == "text")
+        text = text.replace("```json", "").replace("```", "").strip()
+        spec = json.loads(text)
+        return spec.get("headline", title), spec.get("highlight"), spec.get("sub")
+    except Exception as e:
+        print("썸네일 카피 생성 실패, 제목으로 대체: " + str(e))
+        return title, None, None
+
+
+def send_telegram_photo(filepath, caption, timeout=40):
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendPhoto"
+    boundary = "----WebKitFormBoundaryThumb123"
+    filename = os.path.basename(filepath)
+    with open(filepath, "rb") as f:
+        content = f.read()
+    body = b""
+    body += ("--" + boundary + "\r\n").encode()
+    body += b'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+    body += (TELEGRAM_CHAT_ID + "\r\n").encode()
+    body += ("--" + boundary + "\r\n").encode()
+    body += b'Content-Disposition: form-data; name="caption"\r\n\r\n'
+    body += (caption + "\r\n").encode()
+    body += ("--" + boundary + "\r\n").encode()
+    body += ('Content-Disposition: form-data; name="photo"; filename="' + filename + '"\r\n').encode()
+    body += b"Content-Type: image/png\r\n\r\n"
+    body += content
+    body += ("\r\n--" + boundary + "--\r\n").encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            print(res.read().decode("utf-8")[:200])
+    except urllib.error.HTTPError as e:
+        print("썸네일 전송 실패: " + e.read().decode("utf-8", errors="replace"))
+
+
+def send_telegram_document(filepath, caption, timeout=30):
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendDocument"
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    filename = os.path.basename(filepath)
+    content_type = "text/html" if filename.endswith(".html") else "text/plain"
+    with open(filepath, "rb") as f:
+        file_content = f.read()
+
+    body = b""
+    body += ("--" + boundary + "\r\n").encode()
+    body += b'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+    body += (TELEGRAM_CHAT_ID + "\r\n").encode()
+    body += ("--" + boundary + "\r\n").encode()
+    body += b'Content-Disposition: form-data; name="caption"\r\n\r\n'
+    body += (caption + "\r\n").encode()
+    body += ("--" + boundary + "\r\n").encode()
+    body += ('Content-Disposition: form-data; name="document"; filename="' + filename + '"\r\n').encode()
+    body += ("Content-Type: " + content_type + "\r\n\r\n").encode()
+    body += file_content
+    body += ("\r\n--" + boundary + "--\r\n").encode()
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            print(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        print("텔레그램 전송 실패 응답: " + detail)
+        raise
+
+
+def get_latest_telegram_update_id(timeout=15):
+    """현재 시점까지의 텔레그램 업데이트 중 가장 큰 update_id를 baseline으로 기록해,
+    다음 승인확인 워크플로우가 이전 메시지를 재처리하지 않도록 한다."""
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/getUpdates"
+    req = urllib.request.Request(url)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.load(res)
+        results = data.get("result", [])
+        if results:
+            return max(u["update_id"] for u in results)
+        return 0
+    except Exception as e:
+        print("baseline update_id 조회 오류: " + str(e))
+        return 0
+
+
+def main():
+    with open("collection_result.json", "r", encoding="utf-8") as f:
+        result = json.load(f)
+
+    today = today_kst().isoformat()
+
+    plan = {}
+    plan_path = os.path.join("state", "plan.json")
+    if os.path.exists(plan_path):
+        with open(plan_path, "r", encoding="utf-8") as f:
+            plan = json.load(f)
+        print("기획안 로드: " + json.dumps(plan, ensure_ascii=False)[:300])
+    else:
+        print("기획안 파일이 없어 기본 구조로 진행합니다.")
+
+    track = result.get("track", "jisik")
+    # 회의록 특집의 근거는 회의록이지 남의 블로그가 아니다.
+    # 키워드로 네이버 블로그를 뒤지면 장례식장 화환 광고까지 딸려온다.
+    refs = [] if track == "council" else fetch_reference_links(result["top_keyword"])
+    print("트랙: " + track)
+    prompt = build_prompt(result, refs, today, plan=plan, category=track)
+
+    draft = call_claude_with_search(prompt)
+
+    if not draft or not draft.strip():
+        # 검색과 사고가 출력 한도를 다 먹어 본문이 0자인 경우다.
+        # 검색을 끄고 한 번 더 쓴다. 고시·재정계획·뉴스는 이미
+        # 프롬프트에 들어 있어 검색 없이도 글은 나온다.
+        print("빈 응답 — 검색을 끄고 한 번 더 시도합니다.")
+        send_telegram_message(
+            "초안이 비어 나와 검색 없이 다시 씁니다. "
+            "근거 링크가 평소보다 적을 수 있으니 발행 전에 확인하세요.")
+        draft = call_claude_with_search(
+            prompt, max_tokens=DRAFT_RETRY_TOKENS, search=False)
+
+    if not draft or not draft.strip():
+        msg = "초안 생성에 실패했습니다(빈 응답). Claude 응답이 비어 있어 전송을 중단합니다."
+        print(msg)
+        send_telegram_message(msg)
+        raise SystemExit(1)
+
+    os.makedirs("state", exist_ok=True)
+    # 마크다운 원본은 내부적으로 계속 보관 (수정 요청 시 Claude에게 다시 넘길 원본)
+    with open("state/draft.md", "w", encoding="utf-8") as f:
+        f.write(draft)
+    with open("state/collection_result.json", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    # 실제로 보여주고 검토할 파일은 서식이 살아있는 HTML로 변환
+    draft_title = "[초안] " + result["category_display"] + " - " + result["top_keyword"]
+    html = render_naver_html(
+        draft,
+        title=draft_title,
+        category_display=result["category_display"],
+        top_keyword=result["top_keyword"],
+        rows=result["rows"],
+        table_position="none",
+        track=track,
+        agenda=result.get("agenda"),
+    )
+    with open("draft.html", "w", encoding="utf-8") as f:
+        f.write(html)
+
+    mark_count = draft.count("<mark>")
+
+    from date_guard import check_dates
+    _bad = [n for n in check_dates(draft) if n[1] == "실패"]
+    _warn = ("\n\n⚠️ 지난 날짜를 미래형으로 쓴 곳: " + _bad[0][2][:150]) if _bad else ""
+
+    caption = (
+        draft_title
+        + "\n웹 검색으로 최신 수치를 채워 넣었습니다. 노란 하이라이트 " + str(mark_count) + "곳만 직접 확인해주세요."
+        + _warn
+        + "\n\n▶ 이 파일을 다운로드해서 브라우저로 열어보세요(파일을 눌러 크롬 등으로 열기). 서식이 그대로 보입니다."
+        + "\n승인하시려면 '승인'이라고, 수정이 필요하면 원하는 내용을 답장해주세요."
+    )
+    send_telegram_document("draft.html", caption)
+
+    # ── 썸네일 생성 & 전송 ──────────────────────────
+    try:
+        # 초안 첫 H1(제목)을 뽑아 썸네일 카피 생성의 입력으로 사용
+        m = re.search(r"^#\s+(.+)$", draft, flags=re.MULTILINE)
+        post_title = m.group(1).strip() if m else result["top_keyword"]
+        save_title_history(post_title)
+
+        th_headline, th_highlight, th_sub = generate_thumbnail_copy(
+            post_title, result["category_display"]
+        )
+        thumb_path = os.path.join("state", "thumbnail.png")
+        thumb.make_thumbnail(
+            thumb_path,
+            label=result["category_display"],
+            headline=th_headline,
+            highlight=th_highlight,
+            sub=th_sub,
+            crop_key=result["top_keyword"],
+        )
+        send_telegram_photo(
+            thumb_path,
+            "[썸네일] " + post_title + "\n블로그 발행 시 대표 이미지로 사용하세요.",
+        )
+    except Exception as e:
+        import traceback
+        print("썸네일 생성/전송 실패(본문에는 영향 없음): " + repr(e))
+        traceback.print_exc()
+
+    # 이 시점 이후의 답장부터 승인/수정 대상으로 처리하도록 baseline 기록
+    baseline = get_latest_telegram_update_id()
+    with open("state/last_update_id.txt", "w", encoding="utf-8") as f:
+        f.write(str(baseline))
+
+
+if __name__ == "__main__":
+    main()
