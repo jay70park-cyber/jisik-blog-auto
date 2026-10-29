@@ -23,7 +23,8 @@ permissions:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 첫 실행은 상세 페이지를 10장 연다. 조회가 느리면 10분으로는 모자란다.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
