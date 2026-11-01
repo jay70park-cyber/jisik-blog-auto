@@ -1,37 +1,61 @@
 {
-  "week_index": 5,
-  "track": "council",
-  "category": "시의회특집",
-  "category_display": "시의회 회의록 특집",
+  "week_index": 2,
+  "track": "jisik",
+  "category": "물건_검증",
+  "category_display": "물건 검증",
   "period": {
-    "start": "2026-10-01",
-    "end": "2026-10-29"
+    "start": "2026-10-05",
+    "end": "2026-11-02"
   },
   "rows": [
     {
-      "keyword": "화성시 예산",
-      "blog": 438912,
-      "cafe": 193526,
-      "trend": 100.0,
-      "기회": 0.4,
-      "score": 0.88
-    },
-    {
-      "keyword": "동탄 개발 현안",
-      "blog": 5216,
-      "cafe": 2865,
+      "keyword": "동탄 지식산업센터 실거래가",
+      "blog": 4873,
+      "cafe": 195615,
       "trend": 0.0,
-      "기회": 0.5,
+      "기회": 40.1,
       "score": 0.6
     },
     {
-      "keyword": "화성시의회",
-      "blog": 71221,
-      "cafe": 16873,
-      "trend": 14.51446,
-      "기회": 0.2,
-      "score": 0.298
+      "keyword": "동탄 지식산업센터 전용률",
+      "blog": 11902,
+      "cafe": 194373,
+      "trend": 0.0,
+      "기회": 16.3,
+      "score": 0.244
+    },
+    {
+      "keyword": "동탄 지식산업센터 시세",
+      "blog": 19233,
+      "cafe": 220983,
+      "trend": 0.0,
+      "기회": 11.5,
+      "score": 0.172
+    },
+    {
+      "keyword": "동탄 지식산업센터 매매",
+      "blog": 37967,
+      "cafe": 324295,
+      "trend": 0.0,
+      "기회": 8.5,
+      "score": 0.127
+    },
+    {
+      "keyword": "지식산업센터 분양권 전매",
+      "blog": 70028,
+      "cafe": 322516,
+      "trend": 0.0,
+      "기회": 4.6,
+      "score": 0.069
+    },
+    {
+      "keyword": "지식산업센터 등기부 확인",
+      "blog": 43509,
+      "cafe": 86933,
+      "trend": 0.0,
+      "기회": 2.0,
+      "score": 0.03
     }
   ],
-  "top_keyword": "화성시의회"
+  "top_keyword": "동탄 지식산업센터 시세"
 }
