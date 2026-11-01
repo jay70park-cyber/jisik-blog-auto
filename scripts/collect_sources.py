@@ -92,6 +92,21 @@ KEYWORD_HISTORY_FILE = os.path.join(STATE_DIR, "keyword_history.json")
 
 KEYWORD_POOL = 4        # 점수 상위 몇 개까지 후보로 볼 것인가 (품질 하한선)
 KEYWORD_COOLDOWN = 2    # 최근 몇 번 쓴 것을 뺄 것인가 (같은 카테고리 기준)
+
+# 1위의 기회가 2위의 이 배수를 넘으면 쿨다운을 건너뛴다.
+#
+# 쿨다운이 두 주 연속 가장 좋은 재료를 밀어냈다.
+#   2026-10-26  기회 15.9배를 버리고 0.3배를 골랐다
+#   2026-11-02  기회 40.1배를 버리고 11.5배를 골랐다
+#
+# 쿨다운의 전제는 '같은 키워드 = 같은 글' 이다. 그런데 2026-10-26 에
+# 산출물 유형을 5개에서 8개로 늘리고 제목 틀 반복을 다섯 겹으로
+# 막으면서 그 전제가 약해졌다. 같은 키워드로도 다른 글이 나온다.
+# 전제가 흔들렸으면 그 위에 선 장치도 손봐야 한다.
+#
+# 다만 쿨다운을 없애지는 않는다. 고착은 여전히 나쁘다.
+# **압도적일 때만** 비껴간다.
+DOMINANT_RATIO = 2.0
 AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
 
 FRESH_DAYS = 14        # 최근진전일이 이 안이면 '진전 있음'
@@ -760,13 +775,33 @@ def pick_keyword(rows, category):
     계속 뽑혀 소재가 굳는다 — 지역 트랙이 '동탄 서울'로 네 번 연속
     나갔던 것이 그 예다.
 
-    반환  (고른 행, 후보 풀, 제외된 최근 목록)
+    반환  (고른 행, 후보 풀, 제외된 최근 목록, 고른 사유, {키워드: 밀린 사유})
+
+    밀린 사유를 함께 돌려주는 것은 로그 때문이다. 예전에는 1위가
+    왜 빠졌는지 알림만 보고는 알 수 없었다. 기호가 '-' 로만 찍혔고
+    범례에 그 기호가 없었다 (2026-10-26·11-02 두 번 겪음).
     """
     pool = rows[:KEYWORD_POOL] or rows
     recent = load_keyword_history().get(category, [])[:KEYWORD_COOLDOWN]
-    fresh = [r for r in pool if r["keyword"] not in recent]
+    blocked = {}
+
+    # ── 압도적인 1위는 쿨다운을 건너뛴다 ──
+    if len(pool) >= 2:
+        top, second = pool[0].get("기회", 0), pool[1].get("기회", 0)
+        if second > 0 and top >= second * DOMINANT_RATIO:
+            return (pool[0], pool, recent,
+                    "1위 기회가 2위의 {}배 — 쿨다운을 건너뜀".format(
+                        round(top / second, 1)),
+                    blocked)
+
+    fresh = []
+    for r in pool:
+        if r["keyword"] in recent:
+            blocked[r["keyword"]] = "최근 사용"
+        else:
+            fresh.append(r)
     if not fresh:          # 풀이 쿨다운보다 작으면 다 빠질 수 있다
-        fresh = pool
+        fresh, blocked = pool, {}
 
     # 이름만 다르고 주제가 같은 키워드를 거른다.
     # 세금_정책 후보 6개 중 2개가 취득세라, 쿨다운이 글자가 같은 하나를
@@ -775,11 +810,19 @@ def pick_keyword(rows, category):
     for k in recent:
         used |= core_words(k)
     if used:
-        other = [r for r in fresh if not (core_words(r["keyword"]) & used)]
+        other, overlap = [], {}
+        for r in fresh:
+            hit = core_words(r["keyword"]) & used
+            if hit:
+                overlap[r["keyword"]] = "낱말 겹침 ({})".format(
+                    ", ".join(sorted(hit)))
+            else:
+                other.append(r)
         if other:          # 다 겹치면 어쩔 수 없이 원래대로 간다
             fresh = other
+            blocked.update(overlap)
 
-    return fresh[0], pool, recent
+    return fresh[0], pool, recent, "", blocked
 
 
 def main():
@@ -805,18 +848,31 @@ def main():
     rows = score_keywords(keywords, start.isoformat(), end.isoformat())
 
     pick_note = ""
+    blocked, trend_note = {}, ""
     if track == "local" and agenda is not None:
         # 현안명이 곧 소재다. 점수와 무관하게 고정한다.
         top_keyword = agenda["현안명"]
     else:
-        chosen, pool, recent = pick_keyword(rows, category)
+        chosen, pool, recent, why, blocked = pick_keyword(rows, category)
         top_keyword = chosen["keyword"]
         remember_keyword(category, top_keyword)
-        pick_note = "상위 {}개 중 선택 · 최근 {}개 제외".format(
+        pick_note = why or "상위 {}개 중 선택 · 최근 {}개 제외".format(
             len(pool), len(recent))
         print("선정: {} ({})".format(top_keyword, pick_note))
         if recent:
             print("  최근 사용: " + ", ".join(recent))
+        for k, v in blocked.items():
+            print("  밀림: {} — {}".format(k, v))
+
+        # 트렌드가 전부 0이면 점수의 40% 가 통째로 죽은 것이다.
+        # '동탄' 이 붙은 긴 키워드는 데이터랩이 검색량 부족으로 0을
+        # 돌려줘서, 물건 검증 카테고리는 늘 이렇게 된다 (2026-11-02).
+        # 설계는 두 축인데 실제로는 한 축으로 돈다. 알고 쓰는 것과
+        # 모르고 쓰는 것은 다르므로 로그에 남긴다.
+        if rows and not any(r.get("trend") for r in rows):
+            trend_note = ("⚠ 트렌드가 전부 0 — 점수의 40%가 빠지고 "
+                          "기회만으로 정해졌습니다")
+            print("  " + trend_note)
 
     result = {
         "week_index": idx,
@@ -905,16 +961,21 @@ def main():
             lines += ["  " + s for s in skip_log]
         lines.append("")
 
-    recent_kw = load_keyword_history().get(category, [])[:KEYWORD_COOLDOWN]
+    # 밀린 까닭을 줄 끝에 그대로 적는다.
+    #
+    # 예전에는 1위가 '- ' 로만 찍혔고 그 기호가 범례에 없었다.
+    # 왜 1위가 빠졌는지 알림만 보고는 알 수 없어, 코드를 열어 봐야
+    # 알았다 (2026-10-26 · 11-02 두 번).
     for i, r in enumerate(rows):
+        why = blocked.get(r["keyword"], "")
         if r["keyword"] == top_keyword:
             marker = "★ "
-        elif r["keyword"] in recent_kw:
-            marker = "· "          # 최근에 써서 이번엔 제외
+        elif why:
+            marker = "· "          # 밀림 (까닭은 줄 끝에)
         elif i >= KEYWORD_POOL:
             marker = "  "          # 점수가 낮아 후보 밖
         else:
-            marker = "- "
+            marker = "- "          # 후보였으나 1위가 아님
         lines.append(
             marker + r["keyword"]
             + " | 블로그 " + str(r["blog"])
@@ -922,10 +983,14 @@ def main():
             + " | 기회 " + str(r.get("기회", "-")) + "배"
             + " | 트렌드 " + str(r["trend"])
             + " | 스코어 " + str(r["score"])
+            + (" | 밀림: " + why if why else "")
         )
     lines += ["",
               "기회 = 카페 ÷ 블로그 (질문이 답보다 몇 배 많은가)",
-              "★ 선정  · 최근 사용해 제외  (공백) 점수가 낮아 후보 밖"]
+              "★ 선정   · 밀림(까닭은 줄 끝)   "
+              "- 후보였으나 1위 아님   (공백) 점수가 낮아 후보 밖"]
+    if trend_note:
+        lines.append(trend_note)
     if pick_note:
         lines.append(pick_note)
     lines += ["", "이번 주 대표 키워드: " + top_keyword]

@@ -297,6 +297,31 @@ def check_mechanical(draft, plan):
     if ph:
         out.append(("자리표시자", "확인 필요", "{}곳 — 발행 전 채우세요".format(len(ph))))
 
+    # <mark> 밖의 평문 '확인 필요'.
+    #
+    # 2026-11-02: '동탄(화성시) 기준 환산보증금 상한 확인 필요' 가
+    # 본문 한가운데 평문으로 남은 채 발행 직전까지 갔다. 위 검사는
+    # <mark>[...]</mark> 꼴만 세므로 걸리지 않았다.
+    # 모델이 솔직하게 적어 둔 것인데 그 솔직함이 기계에 안 보였다.
+    bare = re.findall(
+        r"[^\n]{0,40}(?:확인\s*필요|확인\s*요망|추후\s*확인|미확인)[^\n]{0,20}",
+        re.sub(r"<mark>.*?</mark>", "", draft, flags=re.S))
+    if bare:
+        out.append(("평문 미확인 표시", "실패",
+                    "{}곳 — <mark>로 감싸거나 채우거나 빼세요: {}".format(
+                        len(bare), bare[0].strip()[:60])))
+
+    # 공공기관 안내문을 통째로 붙여넣은 자리.
+    #
+    # 본문은 '-다' 체인데 인용문만 존댓말이라 말투가 깨진다.
+    # 머리말("정리해 봤습니다")과 가르려고 **긴 문장만** 센다.
+    polite = [s.strip() for s in
+              re.findall(r"[^.\n]{80,}?니다[.)]", draft)]
+    if polite:
+        out.append(("인용문 복사", "주의",
+                    "존댓말 긴 문장 {}곳 — 안내문을 그대로 붙인 듯합니다: {}".format(
+                        len(polite), polite[0].strip()[:50])))
+
     # 표가 하나라도 있는지
     if "|" not in draft or draft.count("|") < 8:
         out.append(("표", "주의", "표가 없거나 너무 작습니다"))
