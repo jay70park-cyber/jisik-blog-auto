@@ -106,6 +106,7 @@ KEYWORD_COOLDOWN = 2    # 최근 몇 번 쓴 것을 뺄 것인가 (같은 카테
 #
 # 다만 쿨다운을 없애지는 않는다. 고착은 여전히 나쁘다.
 # **압도적일 때만** 비껴간다.
+# 2위 기회가 0이면 배수를 정할 수 없으니 이때는 비껴가지 않는다.
 DOMINANT_RATIO = 2.0
 AGENDA_STATE_FILE = os.path.join(STATE_DIR, "agenda_last_id.txt")
 
