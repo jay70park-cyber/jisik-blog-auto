@@ -896,6 +896,14 @@ def latest_tram_status():
 
 OWN_IMAGES = [
     # (주제 낱말, 종류 낱말, 파일 경로, 캡션, 출처, 수집본을 먼저 볼지)
+    #
+    # 주제 낱말은 서로 겹치지 않게 둘 것. 트램과 GTX 는 둘 다 '노선도'
+    # 를 쓰므로 주제 낱말이 갈라야 한다.
+    (("GTX", "광역급행"), ("노선도", "노선", "구간도"),
+     "gtx/gtx-a-route.png",
+     "GTX-A 노선 — 서울역~수서(삼성역) 구간이 아직 연결되지 않아 "
+     "운정중앙~서울역과 수서~동탄이 따로 운행합니다",
+     "", None),
     (("트램", "도시철도"), ("노선도", "노선", "구간도", "단계"),
      "tram/tram-route.jpg",
      "동탄도시철도 노선도 — 망포-오산선 16.58km · 병점-동탄2신도시선 17.82km",
@@ -937,6 +945,47 @@ def pick_own_image(kor_part):
             print("추진현황 수집본이 없어 저장소 사본을 씁니다.")
         return OWN_IMAGE_BASE.rstrip("/") + "/" + path, caption, source
     return None
+
+
+# 현안 전용 노선도 — **자동 지도를 대신한다.**
+#
+# make_map 은 local_agenda.csv 의 좌표 한 점을 네이버 정적지도에 찍는다.
+# A004 GTX-A 의 좌표는 동탄역(37.2007, 127.0966)인데 이 현안의 이야기는
+# 삼성역 구간이라, 지도가 글이 말하는 곳과 다른 데를 가리킨다.
+# 노선 전체가 보이는 그림이 그 자리에 훨씬 맞다 (2026-11-05).
+#
+# 키는 **현안명에 들어 있으면 걸리는 낱말**이다. 좌표는 지우지 않는다 —
+# 여기서 빼면 지도가 다시 돌아온다.
+AGENDA_ROUTE_MAPS = {
+    "GTX-A": (
+        "gtx/gtx-a-route.png",
+        "GTX-A 노선 — 서울역~수서(삼성역) 구간이 아직 연결되지 않아 "
+        "운정중앙~서울역과 수서~동탄이 따로 운행합니다",
+        # 우리가 직접 그린 그림이라 출처 줄을 붙이지 않는다 (빈 값).
+        # 원래 받은 동아일보 그래픽은 쓰지 않기로 했다 — 언론 그래픽은
+        # 출처를 밝혀도 전재가 되므로. 그림 원본은 docs/gtx/route.html.
+        "",
+    ),
+}
+
+
+def agenda_route_map(agenda):
+    """현안 전용 노선도를 <figure> 로 돌려준다. 없으면 빈 문자열."""
+    name = ((agenda or {}).get("현안명") or "").strip()
+    if not name:
+        return ""
+    for key, (path, caption, source) in AGENDA_ROUTE_MAPS.items():
+        if not (key and key in name):
+            continue
+        url = OWN_IMAGE_BASE.rstrip("/") + "/" + path
+        return ('<figure style="margin:20px 0;text-align:center;">'
+                '<img src="' + url + '" width="430" '
+                'style="width:430px;max-width:100%;border-radius:8px;" '
+                'alt="' + caption + '">'
+                '<figcaption style="font-size:14px;color:#888;margin-top:6px;">'
+                + caption + ('<br>출처: ' + source if source else '')
+                + '</figcaption></figure>')
+    return ""
 
 
 def build_own_image_hint(result):
@@ -1001,8 +1050,9 @@ def render_images(markdown_text, rows):
                     'style="width:430px;max-width:100%;border-radius:8px;" '
                     'alt="' + own_caption + '">'
                     '<figcaption style="font-size:14px;color:#888;margin-top:6px;">'
-                    + own_caption + '<br>출처: ' + own_source + '</figcaption>'
-                    '</figure>')
+                    + own_caption
+                    + ('<br>출처: ' + own_source if own_source else '')
+                    + '</figcaption></figure>')
 
         photo = fetch_unsplash_image(search_query)
         if photo:
@@ -1206,11 +1256,17 @@ def render_naver_html(markdown_text, title="블로그 초안", category_display=
     # 독자가 가장 먼저 궁금해하는 것이 "그게 어디냐" 이기 때문이다.
     # 좌표가 없으면 아무것도 붙지 않는다.
     if track == "local" and agenda:
-        try:
-            map_html = make_map.build_map_figure(agenda)
-        except Exception as e:
-            print("지도 생성 실패(본문에는 영향 없음): " + repr(e))
-            map_html = ""
+        # 전용 노선도가 있으면 그것이 자동 지도를 대신한다.
+        map_html = agenda_route_map(agenda)
+        if map_html:
+            print("전용 노선도로 자동 지도를 대신합니다: "
+                  + (agenda.get("현안명") or ""))
+        else:
+            try:
+                map_html = make_map.build_map_figure(agenda)
+            except Exception as e:
+                print("지도 생성 실패(본문에는 영향 없음): " + repr(e))
+                map_html = ""
         if map_html:
             # '지금까지의 흐름' 소제목 앞에 둔다. 흐름을 읽기 전에
             # 위치를 먼저 보여주는 편이 이해가 빠르다.
