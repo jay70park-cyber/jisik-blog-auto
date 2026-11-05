@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body { margin:0; padding:0; background:#fff; }
+  svg { display:block; }
+  text { font-family:"Noto Sans CJK KR","Noto Sans KR",sans-serif; fill:#1b1b1b; }
+  .st  { font-size:16px; font-weight:600; text-anchor:middle; }
+  .stm { font-size:16px; font-weight:400; text-anchor:middle; fill:#8a8a8a; }
+  .stb { font-size:19px; font-weight:800; text-anchor:middle; fill:#C2185B; }
+  .sub { font-size:12px; font-weight:400; text-anchor:middle; fill:#9a9a9a; }
+  .seg { font-size:14px; font-weight:700; text-anchor:middle; fill:#C2185B; }
+  .segm{ font-size:14px; font-weight:700; text-anchor:middle; fill:#8a8a8a; }
+  .lg  { font-size:13px; font-weight:400; fill:#555; }
+</style>
+<svg width="980" height="320" viewBox="0 0 980 320" xmlns="http://www.w3.org/2000/svg">
+  <rect width="980" height="320" fill="#fff"/>
+
+  <!-- 제목 -->
+  <text x="70" y="44" font-size="25" font-weight="800" fill="#C2185B">GTX-A</text>
+  <text x="166" y="44" font-size="17" font-weight="600" fill="#444">노선</text>
+  <text x="910" y="44" font-size="13" fill="#9a9a9a" text-anchor="end">2026년 11월 기준</text>
+
+  <!-- 구간 라벨 -->
+  <text class="seg"  x="280" y="92">운행 중</text>
+  <text class="segm" x="574" y="92">미개통</text>
+  <text class="seg"  x="784" y="92">운행 중</text>
+
+  <!-- 구간 괄호 -->
+  <path d="M70 104 L70 112 L490 112 L490 104"  fill="none" stroke="#C2185B" stroke-width="1.5"/>
+  <path d="M496 104 L496 112 L652 112 L652 104" fill="none" stroke="#b0b0b0" stroke-width="1.5"/>
+  <path d="M658 104 L658 112 L910 112 L910 104" fill="none" stroke="#C2185B" stroke-width="1.5"/>
+
+  <!-- 노선 -->
+  <line x1="70"  y1="160" x2="490" y2="160" stroke="#C2185B" stroke-width="9" stroke-linecap="round"/>
+  <line x1="496" y1="160" x2="652" y2="160" stroke="#bdbdbd" stroke-width="9" stroke-linecap="round" stroke-dasharray="3 11"/>
+  <line x1="658" y1="160" x2="910" y2="160" stroke="#C2185B" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- 역 -->
+  <g fill="#fff" stroke-width="3.5">
+    <circle cx="70"  cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="154" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="238" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="322" cy="160" r="7" stroke="#bdbdbd"/>
+    <circle cx="406" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="490" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="574" cy="160" r="7" stroke="#bdbdbd"/>
+    <circle cx="658" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="742" cy="160" r="7" stroke="#C2185B"/>
+    <circle cx="826" cy="160" r="7" stroke="#C2185B"/>
+  </g>
+  <circle cx="910" cy="160" r="11" fill="#C2185B" stroke="#fff" stroke-width="3.5"/>
+
+  <!-- 역명 -->
+  <text class="st"  x="70"  y="194">운정중앙</text>
+  <text class="st"  x="154" y="194">킨텍스</text>
+  <text class="st"  x="238" y="194">대곡</text>
+  <text class="stm" x="322" y="194">창릉</text>
+  <text class="sub" x="322" y="212">무정차</text>
+  <text class="st"  x="406" y="194">연신내</text>
+  <text class="st"  x="490" y="194">서울역</text>
+  <text class="stm" x="574" y="194">삼성</text>
+  <text class="sub" x="574" y="212">공사 중</text>
+  <text class="st"  x="658" y="194">수서</text>
+  <text class="st"  x="742" y="194">성남</text>
+  <text class="st"  x="826" y="194">용인</text>
+  <text class="stb" x="910" y="196">동탄</text>
+
+  <!-- 범례 -->
+  <line x1="70" y1="262" x2="104" y2="262" stroke="#C2185B" stroke-width="7" stroke-linecap="round"/>
+  <text class="lg" x="114" y="267">운행 중</text>
+  <line x1="196" y1="262" x2="230" y2="262" stroke="#bdbdbd" stroke-width="7" stroke-linecap="round" stroke-dasharray="3 9"/>
+  <text class="lg" x="240" y="267">미개통</text>
+  <text class="lg" x="332" y="267">· 역 간격은 실제 거리가 아닙니다</text>
+</svg>
