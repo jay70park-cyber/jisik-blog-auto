@@ -66,6 +66,9 @@ STYLE = {
     "town":  dict(color="#9FB3D9", marker="o", size=70),
     "target": dict(color="#C9932F", marker="*", size=420),
     "route": dict(color="#C9932F", marker="o", size=150),
+    # 참고 지점은 금색을 쓰지 않는다. 선과 같은 색이면 구간의
+    # 일부로 읽힌다 — 이 도로는 산단까지 가지 않는다.
+    "mark":  dict(color="#1F3C88", marker="^", size=170),
 }
 
 ROUTE_COLOR = "#C9932F"
@@ -89,6 +92,12 @@ BOLD_PATHS = {
 }
 
 LINE_CSV = os.path.join("data", "agenda_lines.csv")
+
+# 현안별 참고 지점. 구간은 어디에서 어디까지인지만 말하고,
+# **왜 그것을 놓는지는 말하지 않는다.** A006 연결도로는 양끝이
+# 신동과 완장리인데, 글의 요지는 그 너머 반도체 국가산단이다.
+# 선에 점을 보태면 없는 구간이 생기므로 선과 따로 찍는다.
+MARK_CSV = os.path.join("data", "agenda_marks.csv")
 
 # ── 정적지도 ────────────────────────────────────
 # 엔드포인트는 콘솔 이전(2025) 전후로 호스트가 다르다.
@@ -301,8 +310,37 @@ def load_line(agenda_id, path=LINE_CSV):
     return out, label
 
 
+def load_marks(agenda_id, path=MARK_CSV):
+    """현안의 참고 지점을 돌려준다.  [(지점명, 위도, 경도), ...]
+
+    선과 **따로** 찍는 점이다. agenda_lines.csv 에 보태면
+    순번에 끼어들어 있지도 않은 구간이 생긴다. A006 연결도로에
+    반도체 산단을 3번으로 넣으면 완장리에서 산단까지 길이 있는
+    것으로 읽힌다. 실제로 없는 길이다.
+
+    파일이 없거나 해당 id 가 없으면 빈 목록. 없어도 지도는 그려진다.
+    """
+    if not agenda_id or not os.path.exists(path):
+        return []
+    want = str(agenda_id).strip()
+    out = []
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f):
+                if (r.get("id") or "").strip() != want:
+                    continue
+                pt = parse_point(r)
+                name = (r.get("지점명") or "").strip()
+                if pt and name:
+                    out.append((name, pt[0], pt[1]))
+    except Exception as e:
+        print("참고 지점을 읽지 못했습니다: {}".format(e))
+        return []
+    return out
+
+
 def draw_map(targets, title="", line=None, lines=None, line_label="",
-             dpi=150, return_mode=False):
+             dpi=150, return_mode=False, marks=None):
     """지도를 그려 base64 data URI 로 돌려준다.
 
     targets     [(이름, 위도, 경도), ...]  점으로 찍을 대상
@@ -315,6 +353,8 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
     반환         data:image/png;base64,... 또는 None
     """
     pts = [(n, la, ln) for n, la, ln in (targets or [])
+           if la is not None and ln is not None]
+    mks = [(n, la, ln) for n, la, ln in (marks or [])
            if la is not None and ln is not None]
     raw = lines if lines is not None else ([line] if line else [])
     segs = []
@@ -332,7 +372,7 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
     plt.rcParams["axes.unicode_minus"] = False
 
     flat = [p for s in segs for p in s]
-    focus = pts + flat
+    focus = pts + mks + flat
     all_lat = [la for _, la, _ in focus] + [l for _, l, _, _ in LANDMARKS]
     all_lng = [ln for _, _, ln in focus] + [g for _, _, g, _ in LANDMARKS]
     # 선형일 때는 양끝 이름표가 바깥으로 나가므로 여백을 더 둔다
@@ -410,7 +450,9 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
     # 동탄역에서 멀리 떨어진 대상은 거리를 함께 보여준다.
     # 선형일 때는 시점 하나만 잰다. 양끝을 다 이으면 그림이 어지럽다.
     hub = next(((la, ln) for n, la, ln, _ in LANDMARKS if n == "동탄역"), None)
-    far_pts = pts if pts else segs[0][:1]
+    # 참고 지점이 있으면 그쪽까지 잰다. A006 에서 읽는 이가 알고 싶은
+    # 거리는 '동탄역~신동 시점'이 아니라 '동탄역~반도체 산단'이다.
+    far_pts = pts if pts else (mks if mks else segs[0][:1])
     # 노선이 동탄역을 지나면 거리를 재지 않는다.
     # 지나가는 역까지 몇 km 라고 긋는 것은 군더더기다.
     if hub and any(dist_km(hub[0], hub[1], la, ln) < LABEL_GAP_KM
@@ -430,8 +472,11 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
             # 선과 직각으로 비켜 놓는다.
             dx, dy = tx - hx, ty - hy
             dn = math.hypot(dx, dy) or 1.0
+            # 참고 지점까지 재면 선이 구간 시점 옆을 스쳐 지나간다.
+            # 45% 지점에 두면 시점 이름표와 겹치므로 더 내보낸다.
+            at = 0.62 if mks else 0.45
             ax.annotate("동탄역 약 {:.0f}km".format(km),
-                        (hx + dx * 0.45, hy + dy * 0.45),
+                        (hx + dx * at, hy + dy * at),
                         xytext=(-dy / dn * 16, dx / dn * 16),
                         textcoords="offset points",
                         ha="center", va="center",
@@ -511,6 +556,35 @@ def draw_map(targets, title="", line=None, lines=None, line_label="",
                     bbox=dict(boxstyle="round,pad=0.3", fc="white",
                               ec=ROUTE_COLOR, lw=0.8, alpha=0.95))
 
+    # 참고 지점 — 구간이 향하는 곳. 구간의 일부가 아니다.
+    # 선보다 뒤(zorder 가 낮은 쪽)에 둬서 선을 가리지 않게 한다.
+    mst = STYLE["mark"]
+    # 이름표가 그림 밖으로 나가지 않게 가장자리에서는 안쪽으로 붙인다.
+    # 산단 이름은 길어서 가운데 맞춤으로 두면 오른쪽이 잘린다.
+    vx0 = x_lo if png else px(lng0)
+    vx1 = x_hi if png else px(lng1)
+    for name, la, ln in mks:
+        ax.scatter(px(ln), py(la), s=mst["size"], c=mst["color"],
+                   marker=mst["marker"], zorder=4,
+                   edgecolors="white", linewidths=1.4)
+        frac = (px(ln) - vx0) / ((vx1 - vx0) or 1.0)
+        if frac > 0.68:
+            ha, ox = "right", 10
+        elif frac < 0.32:
+            ha, ox = "left", -10
+        else:
+            ha, ox = "center", 0
+        # 구간 끝점과 가까우면 그 이름표 아래로 한 칸 더 내린다.
+        # A006 은 종점(완장리)과 산단이 3km 남짓이라 그냥 두면 붙는다.
+        oy = -34 if any(dist_km(la, ln, fla, fln) < 6.0
+                        for _, fla, fln in flat) else -18
+        ax.annotate(name, (px(ln), py(la)), xytext=(ox, oy),
+                    textcoords="offset points", ha=ha, va="top",
+                    fontsize=9.5, fontweight="bold", color="#1F3C88",
+                    zorder=5,
+                    bbox=dict(boxstyle="round,pad=0.28", fc="white",
+                              ec="#1F3C88", lw=0.8, alpha=0.93))
+
     # 이번 글의 대상 (점)
     st = STYLE["target"]
     for name, la, ln in pts:
@@ -571,16 +645,18 @@ def build_map_figure(agenda, caption=""):
     aid = (agenda.get("id") or agenda.get("ID") or "")
 
     segs, seg_label = load_line(aid)
+    marks = load_marks(aid)
     if segs:
         # load_line 이 두 점 미만인 갈래는 이미 버렸으므로 있는지만 본다
         what = "노선" if len(segs) > 1 else "구간"
         uri, mode = draw_map([], lines=segs, line_label=seg_label,
-                             return_mode=True)
+                             return_mode=True, marks=marks)
     else:
         pt = parse_point(agenda)
         if not pt:
             return ""
-        uri, mode = draw_map([(name, pt[0], pt[1])], return_mode=True)
+        uri, mode = draw_map([(name, pt[0], pt[1])], return_mode=True,
+                             marks=marks)
         what = "위치"
 
     if not uri:
@@ -589,16 +665,19 @@ def build_map_figure(agenda, caption=""):
     # 개념도 위에서는 대충 그린 그림으로 읽히지만, 진짜 지도 위에
     # 직선을 그으면 '트램이 저 길로 간다'로 읽힌다. 배경을 좋게 만든
     # 대가로 생긴 오해라서 캡션에서 짚어야 한다.
+    # 참고 지점(세모)은 구간의 일부가 아니다. 그림만 보면 선이
+    # 거기까지 가는 것으로 읽힐 수 있어 캡션이 한 번 끊어 준다.
+    mark_note = " · 세모는 구간이 향하는 곳이며 사업 구간이 아닙니다" if marks else ""
     if caption:
         cap = caption
     elif mode == "map" and segs:
-        cap = "{} {} (네이버 지도 · 주요 지점을 직선으로 연결 — 실제 선형과 다릅니다)".format(
-            name, what)
+        cap = ("{} {} (네이버 지도 · 주요 지점을 직선으로 연결 — "
+               "실제 선형과 다릅니다{})").format(name, what, mark_note)
     elif mode == "map":
         cap = "{} {} (네이버 지도 · 동탄권 주요 지점 대비)".format(name, what)
     else:
-        cap = ("{} {} 개념도 — 실제 축척·도로 형태와 다릅니다"
-               .format(name, what))
+        cap = ("{} {} 개념도 — 실제 축척·도로 형태와 다릅니다{}"
+               .format(name, what, mark_note))
 
     return ('<figure style="margin:20px 0;text-align:center;">'
             '<img src="' + uri + '" width="560" '
