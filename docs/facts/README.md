@@ -8,6 +8,7 @@
 | `tram-facts.md` | A001 동탄 트램 |
 | `gtx-a-facts.md` | A004 GTX-A |
 | `a006-namsa-tunnel.md` | A006 용인 남사~화성 신동 연결도로 |
+| `a010-route84.md` | A010 국지도 84호선 (동탄 중리~용인 천리) |
 | `dongtan-industrial-complexes.md` | 동탄 인근 산업단지 13곳과 거리 |
 | `sandan-uptype.md` | 지식산업센터 입주 가능 업종 — 상담용 |
 | `open-items.md` | 파이프라인 미결 항목 |
